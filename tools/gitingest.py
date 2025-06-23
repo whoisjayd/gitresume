@@ -11,16 +11,256 @@ import aiofiles
 
 logger = logging.getLogger(__name__)
 
-# --- Configuration Constants ---
+from typing import Set
+
 IGNORE_DIRS: Set[str] = {
-    ".git", "__pycache__", "node_modules", "venv", ".venv", "build", "dist",
-    ".pytest_cache", ".mypy_cache", "target", "out", "docs"
+    # Build outputs and temporary directories
+    "build", "dist", "out", "target", "bin", "obj", "artifacts", "generated", "gen",
+    "release", "debug", "_build", ".build", "tmp", "temp", "cache", ".cache", "var", "run",
+
+    # Version control
+    ".git", ".svn", ".hg", ".bzr", "CVS", ".fossil-settings",
+
+    # IDE and editor
+    ".vscode", ".idea", ".eclipse", ".vs", ".vscode-test", ".fleet", ".ionide",
+    ".project", ".settings", ".metadata", ".recommenders",
+
+    # Python
+    "__pycache__", ".pytest_cache", ".mypy_cache", ".tox", ".venv", "venv", ".env",
+    "env", ".virtualenv", "site-packages", ".eggs", "*.egg-info", ".pyenv", ".conda",
+    "anaconda3", "miniconda3", ".ipynb_checkpoints",
+
+    # Node.js / JavaScript / TypeScript
+    "node_modules", ".npm", ".yarn", ".pnpm", "bower_components", ".next", ".nuxt",
+    ".angular", ".storybook-static", "nyc_output", ".parcel-cache", "webpack_cache",
+    ".turbo", ".rush",
+
+    # Go
+    "vendor", ".gocache", ".gopath", "go.work.sum", "testdata", "pkg",
+
+    # C/C++
+    "CMakeFiles", "build", "Debug", "Release", "x64", "x86", "vcpkg_installed",
+    "_deps", ".conan", ".hunter", "out", "bin", "obj",
+
+    # C# / .NET
+    "bin", "obj", "packages", "TestResults", "BenchmarkDotNet.Artifacts", ".nuget",
+    "publish", "wwwroot", ".azure", ".deployment",
+
+    # Java / JVM
+    "target", ".gradle", ".m2", ".ivy2", ".sbt", "project/target", "project/project",
+    ".bloop", ".metals", ".ammonite", "lib_managed", "src_managed", ".ensime_cache",
+
+    # Ruby
+    ".bundle", "vendor/bundle", ".gem", ".rbenv", ".rvm", "gems", ".ruby-version",
+    ".ruby-gemset", "tmp/cache",
+
+    # PHP
+    "vendor", ".phpunit.cache", ".php_cs.cache", ".psalm", ".phpstan",
+
+    # Swift / iOS
+    "DerivedData", ".build", "Pods", "Carthage", "*.xcworkspace", "*.xcodeproj/project.xcworkspace",
+    "*.xcodeproj/xcuserdata", "fastlane/report.xml", "fastlane/Preview.html",
+    "fastlane/screenshots", "fastlane/test_output",
+
+    # Android
+    ".gradle", "app/build", ".idea", "local.properties", "proguard", "captures",
+    ".externalNativeBuild", ".cxx",
+
+    # Flutter / Dart
+    ".dart_tool", ".flutter-plugins", ".flutter-plugins-dependencies", ".packages",
+    "pubspec.lock",
+
+    # Rust
+    "target", ".cargo",
+
+    # Elixir / Erlang
+    "_build", "deps", ".mix", "priv/static",
+
+    # Clojure
+    ".lein", ".nrepl-port", ".cpcache", "resources/public/js",
+
+    # Haskell
+    "dist", "dist-newstyle", ".stack-work", ".cabal-sandbox",
+
+    # OCaml
+    "_build", "_opam", ".merlin",
+
+    # F#
+    "bin", "obj", "paket-files",
+
+    # R
+    ".Rproj.user", ".RData", ".Rhistory", "packrat", "renv",
+
+    # MATLAB
+    "*.asv", "*.mex*", "*.slx.autosave", "*.slxc",
+
+    # Perl
+    "blib", "Build", "MYMETA.*", "pm_to_blib",
+
+    # Lua
+    "luarocks", ".luarocks",
+
+    # Julia
+    ".julia",
+
+    # Nim
+    "nimcache", "htmldocs",
+
+    # Zig
+    "zig-cache", "zig-out",
+
+    # Crystal
+    ".crystal", ".shards",
+
+    # D
+    ".dub",
+
+    # Scala
+    ".bsp", ".metals", ".bloop",
+
+    # Kotlin
+    ".kotlin",
+
+    # Documentation
+    "docs", "_site", ".jekyll-cache", ".docusaurus", "site", "_book", "doc", "api-docs",
+
+    # Logs
+    "logs", "log",
+
+    # Testing
+    "coverage", "htmlcov", "test-results", "test-reports", "test-output", "allure-results",
+    "allure-report",
+
+    # Deployment / Cloud
+    ".netlify", ".vercel", ".now", ".firebase", ".serverless", ".aws-sam", ".terraform",
+    ".terragrunt-cache", ".pulumi",
+
+    # Mobile
+    ".expo", ".expo-shared", "ios/build", "android/build",
+
+    # Game Development
+    "Library", "Temp", "Obj", "Builds", "Logs", "MemoryCaptures", "UserSettings",
+
+    # Containerization
+    ".docker", ".podman",
+
+    # Package managers
+    ".composer", ".pip", ".poetry", ".pipenv",
+
+    # OS-specific
+    ".DS_Store", "Thumbs.db", "desktop.ini", ".Spotlight-V100", ".Trashes",
+    "ehthumbs.db", "ehthumbs_vista.db", ".AppleDouble", ".LSOverride",
+    ".TemporaryItems", ".apdisk",
 }
+
 IGNORE_EXTENSIONS: Set[str] = {
-    ".pyc", ".pyo", ".pyd", ".db", ".sqlite3", ".log", ".exe", ".bin", ".so",
-    ".dll", ".o", ".a", ".obj", ".lib", ".zip", ".tar", ".gz", ".rar", ".md",
-    ".txt"
+    # Compiled / Binary
+    ".pyc", ".pyo", ".pyd",  # Python
+    ".class", ".jar", ".war", ".ear",  # Java
+    ".o", ".obj", ".lib", ".a", ".so", ".dll", ".dylib",  # C/C++
+    ".exe", ".bin", ".out", ".app",  # Executables
+    ".beam",  # Erlang/Elixir
+    ".rlib", ".rmeta",  # Rust
+    ".wasm",  # WebAssembly
+    ".bc", ".ll",  # LLVM
+    ".dex", ".apk", ".aab", ".ipa",  # Mobile
+    ".unity3d", ".unitypackage",  # Unity
+
+    # Go-specific
+    ".test", ".prof", ".sum", ".mod",  # Go modules and test outputs
+
+    # Ruby-specific
+    ".gem", ".gemspec", ".lock",  # Ruby gems and lockfiles
+
+    # Configuration / Metadata
+    ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf",
+    ".env", ".env.local", ".env.production", ".env.development",
+
+    # .NET / C#
+    ".pdb", ".suo", ".user", ".userprefs", ".pidb", ".booproj", ".nupkg", ".snupkg",
+
+    # Databases
+    ".db", ".sqlite", ".sqlite3", ".db3", ".s3db", ".sl3", ".mdb", ".accdb", ".frm", ".myd", ".myi",
+
+    # Logs
+    ".log", ".out", ".err", ".crash", ".dump", ".stackdump", ".mdmp", ".dmp",
+
+    # Archives
+    ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z", ".rar", ".tgz", ".tbz2", ".txz",
+
+    # Images
+    ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".ico", ".svg", ".webp", ".heic", ".avif",
+
+    # Videos
+    ".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm", ".mkv", ".m4v", ".3gp", ".mpeg",
+
+    # Audio
+    ".mp3", ".wav", ".flac", ".aac", ".ogg", ".wma", ".m4a", ".opus",
+
+    # Documents
+    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".odt", ".ods", ".odp", ".rtf",
+
+    # eBooks
+    ".epub", ".mobi", ".azw", ".azw3", ".fb2",
+
+    # Text files
+    ".txt", ".md", ".csv", ".tsv", ".nfo", ".diz",
+
+    # Temporary files
+    ".tmp", ".temp", ".bak", ".swp", ".swo", ".orig", ".crdownload", ".part",
+
+    # OS-specific
+    ".DS_Store", "Thumbs.db", "desktop.ini", ".fuse_hidden*", ".directory", ".Trash-*",
+
+    # IDE / Editor files
+    ".iml", ".classpath", ".buildpath", ".launch", ".prefs", ".pydevproject", ".cproject",
+
+    # Cache files
+    ".cache", ".pid", ".lock", ".lck", ".sem", ".dsym", ".dSYM", ".gch", ".pch",
+
+    # Certificates / Security
+    ".pem", ".key", ".crt", ".cer", ".p12", ".pfx", ".jks", ".gpg", ".pgp",
+
+    # Font files
+    ".ttf", ".otf", ".woff", ".woff2", ".eot",
+
+    # Web-related
+    ".map", ".min.js", ".min.css", ".bundle.js", ".bundle.css", ".manifest",
+
+    # Mobile development
+    ".appx", ".msix", ".appxbundle", ".msixbundle",
+
+    # Game development
+    ".unity", ".prefab", ".asset", ".meta", ".fbx", ".blend", ".obj", ".dae",
+
+    # CAD files
+    ".dwg", ".dxf", ".step", ".stp", ".iges", ".3dm", ".skp",
+
+    # Virtualization
+    ".vmdk", ".vdi", ".vhd", ".vhdx", ".qcow2", ".iso", ".dmg",
+
+    # Scientific/Engineering
+    ".mat", ".fig", ".slx", ".mdl", ".sim", ".vtk", ".stl",
+
+    # Package files
+    ".deb", ".rpm", ".pkg", ".msi", ".appimage",
+
+    # Version control metadata
+    ".gitkeep", ".gitmodules", ".gitattributes",
+
+    # Profiling and debugging
+    ".prof", ".profdata", ".gcov", ".gcda", ".gcno",
+
+    # Linting and formatting
+    ".eslintrc", ".prettierrc", ".stylelintrc", ".editorconfig",
+
+    # Blockchain/Crypto
+    ".sol", ".vyper", ".yul",
+
+    # Infrastructure as Code
+    ".tfstate", ".tfstate.backup", ".tfplan", ".tfvars",
 }
+
 MAX_FILES_TO_PROCESS: int = 5000
 MAX_FILE_SIZE_BYTES: int = 1 * 1024 * 1024
 TEXT_FILE_EXTENSIONS: Set[str] = {
