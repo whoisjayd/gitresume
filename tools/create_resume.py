@@ -27,6 +27,8 @@ logger = logging.getLogger(__name__)
 RESUME_PROMPT_TEMPLATE = """
 You are an elite technical resume strategist and senior software engineering consultant with expertise in ATS optimization and technical storytelling. Your task is to perform deep codebase analysis and generate a compelling, data-driven resume section that showcases real technical achievements.
 
+{user_context}
+
 ## 🎯 Core Mission
 Transform raw codebase analysis into high-impact professional narrative by identifying and articulating the most impressive technical contributions, architectural decisions, and engineering solutions implemented in the project.
 
@@ -160,6 +162,44 @@ Every bullet point must reflect genuine, implemented functionality that demonstr
 PRIMARY_PROVIDER = os.getenv("AI_PROVIDER", "gemini").lower()
 
 
+def redact_sensitive_prompt_data(prompt: str, max_length: int = 1000) -> str:
+    """
+    Redact sensitive information from prompt before sending to client.
+    
+    Args:
+        prompt: The full prompt string
+        max_length: Maximum length of redacted prompt
+        
+    Returns:
+        Sanitized prompt safe for client transmission
+    """
+    import re
+    
+    # Remove potential sensitive patterns
+    sensitive_patterns = [
+        # Email addresses
+        (r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', '[EMAIL_REDACTED]'),
+        # URLs with potential sensitive info
+        (r'https?://[^\s]+', '[URL_REDACTED]'),
+        # API keys (common patterns)
+        (r'["\']?[A-Za-z0-9]{20,}["\']?', '[KEY_REDACTED]'),
+        # File paths that might contain usernames
+        (r'[A-Za-z]:\\[^\\]+\\[^\\]+', '[PATH_REDACTED]'),
+        # Potential secrets or tokens
+        (r'(?i)(secret|token|key|password|auth)["\']?\s*[:=]\s*["\']?[A-Za-z0-9+/=]{10,}', '[SECRET_REDACTED]'),
+    ]
+    
+    redacted_prompt = prompt
+    for pattern, replacement in sensitive_patterns:
+        redacted_prompt = re.sub(pattern, replacement, redacted_prompt)
+    
+    # Truncate to safe length
+    if len(redacted_prompt) > max_length:
+        redacted_prompt = redacted_prompt[:max_length] + "... [TRUNCATED FOR SECURITY]"
+    
+    return redacted_prompt
+
+
 def get_client_factories() -> List[APIClientFactory]:
     """Initializes and returns a list of client factories, only primary."""
     factories = []
@@ -289,13 +329,9 @@ Use metrics from user stats: "{user_stats.get('total_commits', 0)} commits acros
 Focus on MEASURABLE IMPACT and TECHNICAL SOPHISTICATION over chronological order.
 """
     
-    # Insert user context into the main template
-    enhanced_template = RESUME_PROMPT_TEMPLATE.replace(
-        "## 🎯 Core Mission",
-        f"{user_context}\n\n## 🎯 Core Mission"
-    )
-    
-    final_prompt = enhanced_template.format(
+    # Build the final prompt using proper templating with placeholders
+    final_prompt = RESUME_PROMPT_TEMPLATE.format(
+        user_context=user_context,
         job_description=job_desc_text,
         gitingest_summary=gitingest_summary,
         gitingest_tree=gitingest_tree,
@@ -403,9 +439,14 @@ async def create_resume_tool(
 
         prompt = _build_prompt(str(gitingest_summary), gitingest_tree, truncated_content, job_description, user_stats)
 
-        # Send prompt details to browser console via WebSocket
+        # Send prompt details to browser console via WebSocket (with sensitive data redacted)
         if websocket:
             is_user_specific = user_stats is not None and bool(user_stats)
+            # Redact sensitive information before sending to client
+            safe_prompt = redact_sensitive_prompt_data(prompt, max_length=2000)
+            prompt_preview = prompt[:500] + "..." if len(prompt) > 500 else prompt
+            safe_preview = redact_sensitive_prompt_data(prompt_preview, max_length=500)
+            
             prompt_info = {
                 "type": "prompt_debug",
                 "generation_id": generation_id,
@@ -414,8 +455,8 @@ async def create_resume_tool(
                     "prompt_length": len(prompt),
                     "content_truncated": content_truncated,
                     "user_stats": user_stats if user_stats else None,
-                    "prompt_preview": prompt[:500] + "..." if len(prompt) > 500 else prompt,
-                    "full_prompt": prompt  # Full prompt for detailed debugging
+                    "prompt_preview": safe_preview,
+                    "full_prompt": safe_prompt  # Redacted version for security
                 }
             }
             try:

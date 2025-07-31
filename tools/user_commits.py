@@ -10,10 +10,59 @@ import subprocess
 import json
 import os
 import logging
+import shlex
+from pathlib import Path
 from typing import List, Dict, Set, Optional
 from github import Github, GithubException
 
 logger = logging.getLogger(__name__)
+
+
+def safe_git_command(cmd_args: List[str], repo_path: str, check: bool = True) -> subprocess.CompletedProcess:
+    """
+    Execute a git command safely with proper validation and error handling.
+    
+    Args:
+        cmd_args: List of command arguments (must start with 'git')
+        repo_path: Repository path (validated to be safe)
+        check: Whether to raise exception on non-zero exit code
+        
+    Returns:
+        CompletedProcess result
+        
+    Raises:
+        ValueError: If command or path is invalid
+        subprocess.CalledProcessError: If command fails and check=True
+    """
+    # Validate command starts with git
+    if not cmd_args or cmd_args[0] != 'git':
+        raise ValueError("Command must start with 'git'")
+    
+    # Validate and sanitize repository path
+    repo_path_obj = Path(repo_path).resolve()
+    if not repo_path_obj.exists() or not (repo_path_obj / '.git').exists():
+        raise ValueError(f"Invalid repository path: {repo_path_obj}")
+    
+    # Ensure all arguments are strings and safe
+    safe_args = []
+    for arg in cmd_args:
+        if not isinstance(arg, str):
+            raise ValueError(f"All command arguments must be strings, got: {type(arg)}")
+        # Basic validation - no shell metacharacters in git arguments
+        if any(char in arg for char in ['&', '|', ';', '$', '`', '\n', '\r']):
+            raise ValueError(f"Invalid characters in git argument: {arg}")
+        safe_args.append(arg)
+    
+    logger.debug(f"Executing safe git command: {' '.join(safe_args)} in {repo_path_obj}")
+    
+    return subprocess.run(
+        safe_args,
+        cwd=str(repo_path_obj),
+        capture_output=True,
+        text=True,
+        check=check,
+        timeout=30  # Add timeout for security
+    )
 
 
 class UserCommitAnalyzer:
@@ -76,13 +125,7 @@ class UserCommitAnalyzer:
                 '--all'
             ]
             
-            result = subprocess.run(
-                cmd, 
-                cwd=repo_path, 
-                capture_output=True, 
-                text=True, 
-                check=True
-            )
+            result = safe_git_command(cmd, repo_path)
             
             for line in result.stdout.strip().split('\n'):
                 if not line:
@@ -128,13 +171,7 @@ class UserCommitAnalyzer:
                     commit_hash
                 ]
                 
-                result = subprocess.run(
-                    cmd, 
-                    cwd=repo_path, 
-                    capture_output=True, 
-                    text=True, 
-                    check=True
-                )
+                result = safe_git_command(cmd, repo_path)
                 
                 for file_path in result.stdout.strip().split('\n'):
                     if file_path:
@@ -361,13 +398,7 @@ class UserCommitAnalyzer:
             try:
                 # Get commit message
                 cmd_msg = ['git', 'log', '--format=%s', '-n', '1', commit_hash]
-                msg_result = subprocess.run(
-                    cmd_msg, 
-                    cwd=repo_path, 
-                    capture_output=True, 
-                    text=True, 
-                    check=True
-                )
+                msg_result = safe_git_command(cmd_msg, repo_path)
                 commit_message = msg_result.stdout.strip()
                 
                 # Get commit diff (exclude binary files and limit size)
@@ -379,13 +410,7 @@ class UserCommitAnalyzer:
                     '--unified=3'  # 3 lines of context
                 ]
                 
-                diff_result = subprocess.run(
-                    cmd_diff, 
-                    cwd=repo_path, 
-                    capture_output=True, 
-                    text=True, 
-                    check=True
-                )
+                diff_result = safe_git_command(cmd_diff, repo_path)
                 
                 diff_content = diff_result.stdout.strip()
                 
@@ -438,13 +463,7 @@ class UserCommitAnalyzer:
                     commit_hash
                 ]
                 
-                result = subprocess.run(
-                    cmd, 
-                    cwd=repo_path, 
-                    capture_output=True, 
-                    text=True, 
-                    check=True
-                )
+                result = safe_git_command(cmd, repo_path)
                 
                 # Parse the output to extract stats
                 lines = result.stdout.strip().split('\n')
