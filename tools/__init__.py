@@ -9,6 +9,7 @@ declares which names are part of the public API.
 from .create_resume import create_resume_tool
 from .git_operations import clone_repo_tool
 from .gitingest import gitingest_tool
+from .user_commits import filter_repo_by_user_commits
 from .utils import robust_rmtree
 
 # __all__ defines the public API for the 'tools' package.
@@ -17,5 +18,6 @@ __all__ = [
     'create_resume_tool',
     'clone_repo_tool',
     'gitingest_tool',
+    'filter_repo_by_user_commits',
     'robust_rmtree',
 ]
