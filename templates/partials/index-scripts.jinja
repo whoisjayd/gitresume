@@ -25,11 +25,87 @@
         }
     }
 
+    // LocalStorage functions for maintaining checkbox state across page reloads
+    function saveCheckboxState() {
+        const userCommitsCheckbox = document.getElementById('user_commits_only');
+        if (userCommitsCheckbox) {
+            localStorage.setItem('gitresume_user_commits_only', userCommitsCheckbox.checked);
+            console.log('💾 Saved checkbox state:', userCommitsCheckbox.checked);
+        }
+    }
+
+    function restoreCheckboxState() {
+        const userCommitsCheckbox = document.getElementById('user_commits_only');
+        if (userCommitsCheckbox) {
+            const savedState = localStorage.getItem('gitresume_user_commits_only');
+            if (savedState !== null) {
+                const isChecked = savedState === 'true';
+                userCommitsCheckbox.checked = isChecked;
+                console.log('🔄 Restored checkbox state:', isChecked);
+                
+                // Trigger the info display update
+                toggleUserCommitsInfo();
+            }
+        }
+    }
+
+    function toggleUserCommitsInfo(event) {
+        // Prevent the checkbox click from triggering form submission
+        if (event) {
+            event.stopPropagation();
+        }
+        
+        const checkbox = document.getElementById('user_commits_only');
+        const infoContainer = document.getElementById('user_commits_info');
+        const tokenIndicator = document.getElementById('token_required_indicator');
+
+        console.log('🔄 User Commits Toggle:', checkbox.checked ? 'ENABLED' : 'DISABLED');
+        
+        // Save state to localStorage
+        saveCheckboxState();
+
+        if (checkbox.checked) {
+            infoContainer.classList.remove('hidden');
+            if (tokenIndicator) {
+                tokenIndicator.classList.remove('hidden');
+            }
+        } else {
+            infoContainer.classList.add('hidden');
+            if (tokenIndicator) {
+                tokenIndicator.classList.add('hidden');
+            }
+        }
+    }
+
+    function validateForm() {
+        const userCommitsOnly = document.getElementById('user_commits_only').checked;
+        const githubToken = document.getElementById('github_token');
+        
+        if (userCommitsOnly && githubToken && !githubToken.value.trim()) {
+            alert('GitHub token is required when analyzing only your contributions.');
+            githubToken.focus();
+            return false;
+        }
+        
+        return true;
+    }
+
     function prepareFormSubmit(event) {
+        // Validate form first
+        if (!validateForm()) {
+            event.preventDefault();
+            return false;
+        }
+        
         const checkbox = document.getElementById('show_job_description');
         const jobDescriptionTextarea = document.getElementById('job_description');
         const hiddenInput = document.getElementById('job_description_hidden');
         const repoUrl = document.getElementById('repo_url').value;
+        const userCommitsOnlyCheckbox = document.getElementById('user_commits_only');
+        const userCommitsOnlyHidden = document.getElementById('user_commits_only_hidden');
+
+        // CRITICAL: Save checkbox state to localStorage before form submission
+        saveCheckboxState();
 
         // Strip newlines and excessive whitespace from job description
         let processedJobDescription = '';
@@ -37,6 +113,15 @@
             processedJobDescription = jobDescriptionTextarea.value.replace(/\s+/g, ' ').trim();
         }
         hiddenInput.value = checkbox.checked ? processedJobDescription : '';
+
+        // CRITICAL: Update the hidden input to reflect the checkbox state
+        if (userCommitsOnlyCheckbox.checked) {
+            userCommitsOnlyHidden.value = 'on';
+            console.log('🔄 Form submission - User commits only: ENABLED');
+        } else {
+            userCommitsOnlyHidden.value = 'off';
+            console.log('🔄 Form submission - User commits only: DISABLED');
+        }
 
         const path = repoUrl.replace('https://github.com/', '');
         history.pushState({}, '', '/' + path);
@@ -171,6 +256,23 @@
                         case 'status':
                             updateStatus(data.content);
                             updateStepProgress(data.content);
+                            break;
+                        case 'prompt_debug':
+                            // Log prompt information to browser console for debugging
+                            console.group('🎯 AI Prompt Debug Information');
+                            console.log('Is User-Specific Analysis:', data.data.is_user_specific);
+                            console.log('Prompt Length:', data.data.prompt_length);
+                            console.log('Content Truncated:', data.data.content_truncated);
+                            if (data.data.user_stats) {
+                                console.log('User Stats:', data.data.user_stats);
+                            }
+                            console.log('Prompt Preview (first 500 chars):', data.data.prompt_preview);
+                            console.log('Full Prompt:', data.data.full_prompt);
+                            console.groupEnd();
+                            
+                            // Log the current state of the "my commits only" toggle
+                            const userCommitsToggle = document.getElementById('user_commits_only');
+                            console.log('🔘 "Analyze only my contributions" toggle state:', userCommitsToggle ? (userCommitsToggle.checked ? 'ENABLED' : 'DISABLED') : 'NOT FOUND');
                             break;
                         case 'complete':
                             updateStatus('✅ Generation complete!');
@@ -335,6 +437,25 @@
                         window.location.href = window.location.pathname + window.location.search;
                     };
                 }
+            }
+            
+            // Restore checkbox state from localStorage
+            restoreCheckboxState();
+            
+            // Add proper event listener for the user commits checkbox
+            const userCommitsCheckbox = document.getElementById('user_commits_only');
+            if (userCommitsCheckbox) {
+                userCommitsCheckbox.addEventListener('change', function(e) {
+                    e.stopPropagation();
+                    toggleUserCommitsInfo(e);
+                });
+                
+                // Also save state on any change
+                userCommitsCheckbox.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    // Small delay to ensure the checked state is updated
+                    setTimeout(saveCheckboxState, 10);
+                });
             }
         });
 

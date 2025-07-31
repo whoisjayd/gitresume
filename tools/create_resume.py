@@ -63,30 +63,61 @@ Transform raw codebase analysis into high-impact professional narrative by ident
 
 ## 🚀 Bullet Point Excellence Framework
 
-### **Prioritization Hierarchy (Most Important First)**
-1. **Technical Innovation & Complexity** - Novel algorithms, advanced patterns, sophisticated architectures
-2. **Performance & Scale Impact** - Measurable improvements, optimization results, capacity enhancements  
-3. **Business & User Value** - Real-world problem solving, feature impact, user experience improvements
-4. **Engineering Excellence** - Code quality, maintainability, testing, documentation, DevOps practices
-5. Make sure that if job description is provided, the bullet points are tailored to align with the job requirements.
-6. Key words from the job description should be naturally integrated into the bullet points.
+### **Prioritization Hierarchy (Weighted Scoring System)**
+**CRITICAL: Rank achievements by weighted impact score, NOT by chronological order or recency**
+
+1. **QUANTIFIABLE IMPACT & RESULTS (40% weight)** - Measurable improvements with specific metrics
+   - Performance gains (X% faster, Y% reduction in load time, Z% improved throughput)
+   - Scale achievements (handled X users, processed Y transactions, managed Z data volume)
+   - Cost savings or efficiency gains (reduced X% operational costs, saved Y hours, eliminated Z manual processes)
+   - Quality improvements (reduced X% bugs, increased Y% test coverage, improved Z% reliability)
+
+2. **IMPLEMENTATION DIFFICULTY & TECHNICAL COMPLEXITY (30% weight)** - Advanced technical challenges
+   - Architectural complexity (distributed systems, microservices, complex integrations)
+   - Algorithm sophistication (ML models, optimization algorithms, complex data structures)
+   - Technical innovation (novel approaches, cutting-edge technologies, research-level work)
+   - Cross-system integration complexity (multiple APIs, legacy system modernization)
+
+3. **BUSINESS & USER IMPACT (20% weight)** - Real-world value and problem-solving significance
+   - User experience transformations (improved usability, accessibility, feature adoption)
+   - Critical system improvements (security enhancements, disaster recovery, compliance)
+   - Business process automation (workflow optimization, manual task elimination)
+   - Strategic technical decisions (technology migration, platform modernization)
+
+4. **ATS & KEYWORD OPTIMIZATION (10% weight)** - Resume scanning and job alignment
+   - Job description keyword alignment and technical terminology matching
+   - Industry-standard technology stack demonstration
+   - Professional development practices (CI/CD, testing, documentation)
+   - Engineering excellence indicators (code quality, maintainability, best practices)
+
+### **Achievement Ranking Guidelines**
+- **Tier 1 (Highest Priority)**: Quantifiable + High Complexity + High Impact
+- **Tier 2 (High Priority)**: Strong Quantifiable Results OR High Technical Complexity
+- **Tier 3 (Medium Priority)**: Moderate Impact with ATS optimization
+- **Exclude**: Low-impact changes, simple fixes, routine maintenance (regardless of recency)
 
 ### **Writing Standards**
-- **Action-Driven Language**: Begin with powerful technical verbs (Architected, Engineered, Optimized, Implemented, Automated, Streamlined)
-- **Quantifiable Impact**: Include metrics, percentages, performance gains, scale indicators whenever possible
-- **Technical Depth**: Demonstrate understanding of underlying technologies and engineering principles
+- **QUANTIFIABLE FIRST**: ALWAYS prioritize measurable results - percentages, numbers, scale indicators, time savings, performance improvements
+- **Technical Complexity Indicators**: Use terms that convey difficulty - "architected," "engineered," "optimized," "scaled," "automated," "integrated"
+- **Impact-Driven Language**: Begin with powerful verbs that show significant contribution and technical depth
+- **Metrics Integration**: Include specific numbers wherever possible (X% improvement, Y users supported, Z systems integrated)
+- **Technical Sophistication**: Demonstrate advanced engineering concepts and architectural thinking
+- **Problem-Solution-Impact**: Structure as Challenge → Technical Solution → Quantifiable Result
+- **ATS Optimization**: Use industry-standard terminology and relevant technical keywords from job requirements
+- **Confidentiality First**: Focus on technical impact and improvements rather than specific business logic or proprietary implementation details
+- **Generic Technical Language**: Use terms like "enhanced system performance," "improved error handling," "optimized data processing" instead of specific method names or business rules
 - **Plain Text Format**: Simple strings only - no nested objects or complex structures
 - **STAR Method Integration**: Incorporate Situation, Task, Action, Result naturally within narrative flow
-- **ATS Optimization**: Use industry-standard terminology and relevant technical keywords
 - Do not include any personal information, such as names, contact details, or locations.
 - DO not use personal pronouns like "I" or "we". Write in the third person.
 
 ### **Content Requirements**
-- Extract achievements from **actual implemented code and features**
-- Highlight **real architectural decisions and technical challenges solved**
-- Showcase **genuine problem-solving and engineering judgment**
-- Demonstrate **proficiency with the specific technology stack used**
-- Reflect **measurable outcomes and technical improvements**
+- Extract achievements from **technical patterns and improvement types** rather than specific code implementations
+- Highlight **architectural approaches and problem-solving methodologies** without revealing proprietary logic
+- Showcase **engineering excellence and technical impact** while maintaining confidentiality
+- Demonstrate **proficiency with technology stacks and development practices** used
+- Reflect **measurable outcomes and system improvements** in general terms
+- **Privacy-Conscious Analysis**: When commit data is available, focus on the TYPE of improvements made (performance, security, maintainability) rather than specific implementation details
 
 ## 🎯 Interview Preparation Framework
 
@@ -110,7 +141,18 @@ Transform raw codebase analysis into high-impact professional narrative by ident
 - **Target Role Context**: `{job_description}`
 
 ## ⚡ Final Instructions
-Generate **valid JSON only** with no additional commentary, explanations, or formatting. Focus on extracting and articulating the most compelling technical narrative from the actual codebase provided. Every bullet point must reflect genuine, implemented functionality that demonstrates professional-level software engineering capabilities.
+Generate **valid JSON only** with no additional commentary, explanations, or formatting. 
+
+**CRITICAL RANKING METHODOLOGY:**
+1. **Score each achievement** using weighted criteria: Quantifiable Impact (40%) + Technical Complexity (30%) + Business Impact (20%) + ATS Relevance (10%)
+2. **Prioritize measurable results** - include specific percentages, numbers, scale indicators, time savings, performance improvements
+3. **Rank by impact score** NOT chronological order - ignore commit dates and recency
+4. **Lead with metrics** - start bullet points with quantifiable results whenever possible
+5. **Focus on technical sophistication** - emphasize advanced engineering, architecture, and complex problem-solving
+
+**BULLET POINT FORMULA:** Technical Action + Quantifiable Metric + Business/Technical Impact
+
+Every bullet point must reflect genuine, implemented functionality that demonstrates professional-level software engineering capabilities with measurable outcomes.
 """.strip()
 
 # --- AI Model Initialization ---
@@ -162,15 +204,108 @@ async def _emit_ws_message(websocket: Optional[WebSocket], msg_type: str, conten
 
 
 def _build_prompt(gitingest_summary: str, gitingest_tree: str, gitingest_content: str,
-                  job_description: Optional[str]) -> str:
+                  job_description: Optional[str], user_stats: Optional[Dict[str, Any]] = None) -> str:
     """Constructs the final prompt for the AI model."""
+    # Determine if this is user-specific analysis
+    is_user_specific = user_stats is not None and bool(user_stats)
+    
+    # Log basic info to server (keep minimal)
+    logger.info(f"Building prompt - User-specific: {is_user_specific}")
+    if is_user_specific and user_stats:
+        logger.info(f"User stats: {user_stats.get('total_commits', 0)} commits, {user_stats.get('lines_added', 0)} lines added")
+        
     job_desc_text = f"The user is applying for a job with this description: {job_description.strip()}" if job_description else "N/A"
-    return RESUME_PROMPT_TEMPLATE.format(
+    
+    # Build user-specific context if available
+    user_context = ""
+    if user_stats:
+        user_context = f"""
+
+🎯 CRITICAL: This analysis represents ONLY the authenticated user's personal contributions to this project.
+
+USER'S CONTRIBUTION METRICS:
+- Personal commits made: {user_stats.get('total_commits', 0)}
+- Lines of code added: {user_stats.get('lines_added', 0)}
+- Lines of code modified/deleted: {user_stats.get('lines_deleted', 0)}
+- Files personally modified: {user_stats.get('files_modified', 0)}
+- Programming languages used: {', '.join(user_stats.get('languages', []))}
+
+📝 COMMIT ANALYSIS METHODOLOGY:
+The implementation details section includes the user's code contributions, but maintain confidentiality by:
+
+⭐ WEIGHTED SCORING FOR ACHIEVEMENT RANKING (IGNORE CHRONOLOGICAL ORDER):
+
+🏆 TIER 1 ACHIEVEMENTS (Highest Priority - Include These First):
+✅ QUANTIFIABLE IMPACT (40% weight): Look for measurable improvements in commit patterns
+   - Performance metrics: "Optimized algorithm reducing execution time by X%"
+   - Scale achievements: "Enhanced system to handle X concurrent users"
+   - Efficiency gains: "Automated process eliminating X hours of manual work"
+   - Quality improvements: "Implemented testing increasing coverage by X%"
+
+✅ TECHNICAL COMPLEXITY (30% weight): Identify sophisticated engineering challenges
+   - Multi-system integration across X platforms
+   - Complex algorithm implementation (ML, optimization, data processing)
+   - Architectural decisions for scalability and maintainability
+   - Advanced technology adoption and implementation
+
+🥈 TIER 2 ACHIEVEMENTS (High Priority):
+✅ HIGH IMPACT + MODERATE COMPLEXITY: Significant business value with solid technical depth
+✅ HIGH COMPLEXITY + MODERATE IMPACT: Advanced technical work with measurable results
+
+🥉 TIER 3 ACHIEVEMENTS (Include if space allows):
+✅ MODERATE IMPACT + ATS OPTIMIZATION: Good technical work with job-relevant keywords
+
+❌ EXCLUDE (Regardless of Recency):
+❌ Simple bug fixes, routine maintenance, minor updates
+❌ Low-impact changes without measurable results
+❌ Basic feature implementations without complexity or quantifiable outcomes
+
+ANALYSIS APPROACH FOR USER COMMITS:
+1. Calculate technical complexity score based on files modified, lines changed, and improvement type
+2. Identify quantifiable metrics from commit patterns (performance, scale, efficiency)
+3. Assess business impact level (critical systems, user experience, operational efficiency)
+4. Rank achievements by weighted score, NOT by timeline or commit date
+5. Extract specific numbers and percentages wherever possible from technical analysis
+
+CONFIDENTIALITY REQUIREMENTS:
+❌ Do NOT expose specific business logic, proprietary algorithms, or sensitive implementation details
+❌ Do NOT include actual code snippets, variable names, or method signatures in bullet points
+❌ Do NOT reveal specific domain knowledge, business rules, or proprietary workflows
+❌ Avoid mentioning specific client names, internal project names, or confidential features
+
+BULLET POINT RANKING METHODOLOGY:
+1. Score each potential achievement: (Quantifiable Impact × 40%) + (Technical Complexity × 30%) + (Business Impact × 20%) + (ATS Relevance × 10%)
+2. Rank by weighted score and select top 5 achievements regardless of commit date or recency
+3. ALWAYS lead with specific metrics and quantifiable results when available
+4. Structure as: "Technical Action + Quantifiable Result + Impact/Benefit"
+
+EXAMPLES OF PREFERRED BULLET POINT FORMATS:
+✅ "Engineered distributed caching system reducing API response time by 65% and supporting 10x user load"
+✅ "Architected microservices infrastructure handling 1M+ daily transactions with 99.9% uptime"
+✅ "Optimized database queries improving application performance by 40% and reducing server costs by $2K/month"
+✅ "Implemented automated testing pipeline increasing code coverage from 60% to 95% and reducing bugs by 80%"
+
+Use metrics from user stats: "{user_stats.get('total_commits', 0)} commits across {user_stats.get('files_modified', 0)} files, {user_stats.get('lines_added', 0)} lines contributed"
+Focus on MEASURABLE IMPACT and TECHNICAL SOPHISTICATION over chronological order.
+"""
+    
+    # Insert user context into the main template
+    enhanced_template = RESUME_PROMPT_TEMPLATE.replace(
+        "## 🎯 Core Mission",
+        f"{user_context}\n\n## 🎯 Core Mission"
+    )
+    
+    final_prompt = enhanced_template.format(
         job_description=job_desc_text,
         gitingest_summary=gitingest_summary,
         gitingest_tree=gitingest_tree,
         gitingest_content=gitingest_content,
     )
+    
+    # Minimal server logging
+    logger.info(f"Generated prompt - Length: {len(final_prompt)} chars, User-specific: {user_stats is not None}")
+    
+    return final_prompt
 
 
 async def _generate_and_parse_response(prompt: str) -> Dict[str, Any]:
@@ -228,6 +363,7 @@ async def create_resume_tool(
         project_name: Optional[str] = None,
         job_description: Optional[str] = None,
         websocket: Optional[WebSocket] = None,
+        user_stats: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Main tool to generate a resume section from repository analysis.
@@ -240,6 +376,7 @@ async def create_resume_tool(
         project_name: An optional name for the project.
         job_description: An optional job description to tailor the output.
         websocket: An optional WebSocket for streaming status updates.
+        user_stats: Optional user contribution statistics when analyzing user-specific commits.
 
     Returns:
         A dictionary containing the generated resume content or an error.
@@ -264,7 +401,27 @@ async def create_resume_tool(
         content_truncated = len(gitingest_content) > max_chars
         truncated_content = gitingest_content[:max_chars] if content_truncated else gitingest_content
 
-        prompt = _build_prompt(str(gitingest_summary), gitingest_tree, truncated_content, job_description)
+        prompt = _build_prompt(str(gitingest_summary), gitingest_tree, truncated_content, job_description, user_stats)
+
+        # Send prompt details to browser console via WebSocket
+        if websocket:
+            is_user_specific = user_stats is not None and bool(user_stats)
+            prompt_info = {
+                "type": "prompt_debug",
+                "generation_id": generation_id,
+                "data": {
+                    "is_user_specific": is_user_specific,
+                    "prompt_length": len(prompt),
+                    "content_truncated": content_truncated,
+                    "user_stats": user_stats if user_stats else None,
+                    "prompt_preview": prompt[:500] + "..." if len(prompt) > 500 else prompt,
+                    "full_prompt": prompt  # Full prompt for detailed debugging
+                }
+            }
+            try:
+                await websocket.send_text(json.dumps(prompt_info))
+            except Exception as e:
+                logger.warning(f"Failed to send prompt debug info: {e}")
 
         resume_data = await _generate_and_parse_response(prompt)
 

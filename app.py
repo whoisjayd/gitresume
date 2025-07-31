@@ -52,7 +52,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.websockets import WebSocketState
 
-from tools import gitingest_tool, clone_repo_tool, create_resume_tool
+from tools import gitingest_tool, clone_repo_tool, create_resume_tool, filter_repo_by_user_commits
 from tools.gitingest import IGNORE_DIRS, IGNORE_EXTENSIONS
 from tools.utils import robust_rmtree
 
@@ -124,6 +124,7 @@ CACHE_TTL = 300  # Cache time-to-live in seconds
 DDoS_WINDOW = 10  # Seconds for DDoS tracking
 DDoS_MAX_REQUESTS = 50  # Max requests in DDoS window
 CLOUDFLARE_ONLY = os.getenv("CLOUDFLARE_ONLY", "false").lower() == "true"
+ENABLE_REPO_SIZE_LIMITS = os.getenv("ENABLE_REPO_SIZE_LIMITS", "false").lower() == "true"
 
 # Cloudflare IP ranges for middleware
 CLOUDFLARE_IP_RANGES = [
@@ -210,6 +211,7 @@ class GitHubSessionData(BaseModel):
     repo_url: Optional[str] = None
     local_path: Optional[str] = None
     job_description: Optional[str] = None
+    user_commits_only: Optional[bool] = False
     result: Optional[Dict[str, Any]] = None
     status: Optional[str] = None
 
@@ -278,7 +280,7 @@ def set_session_cookie(response, session_id: str):
     )
 
 
-async def get_cached_repository_validation(repo_url: str, github_token: str = None) -> Dict[str, Any]:
+async def get_cached_repository_validation(repo_url: str, github_token: Optional[str] = None) -> Dict[str, Any]:
     """Retrieve or validate repository access, caching results."""
     cache_key = f"{repo_url}_{hash(github_token) if github_token else 'public'}"
     current_time = time.time()
@@ -519,7 +521,7 @@ async def get_filtered_repo_stats(local_path: str) -> Dict[str, Any]:
     return await asyncio.to_thread(calculate_stats)
 
 
-async def validate_repository_access(repo_url: str, github_token: str = None) -> Dict[str, Any]:
+async def validate_repository_access(repo_url: str, github_token: Optional[str] = None) -> Dict[str, Any]:
     """Validate access to a GitHub repository with clear error handling and messaging.
 
     Args:
@@ -907,6 +909,133 @@ async def save_generation_data(session_id: str, generation_id: str, data: dict, 
     )
 
 
+def analyze_commit_technical_impact(diff_content: str, commit_info: Dict[str, Any]) -> str:
+    """
+    Analyze a commit diff to extract technical impact and improvements with quantifiable metrics.
+    
+    Args:
+        diff_content: The raw diff content
+        commit_info: Commit metadata (hash, message, additions, deletions, etc.)
+        
+    Returns:
+        A confidentiality-safe analysis focusing on quantifiable impact and complexity
+    """
+    if not diff_content:
+        return "Technical contribution with code modifications."
+    
+    analysis_points = []
+    
+    # Analyze diff patterns for technical improvements
+    lines = diff_content.split('\n')
+    
+    # Count different types of changes
+    added_lines = len([l for l in lines if l.startswith('+')])
+    removed_lines = len([l for l in lines if l.startswith('-')])
+    total_changes = commit_info.get('additions', 0) + commit_info.get('deletions', 0)
+    files_changed = commit_info.get('files_changed', 1)
+    
+    # Calculate complexity score (0-100)
+    complexity_score = min(100, (total_changes / 10) + (files_changed * 5))
+    
+    # Look for technical patterns with quantifiable impact potential
+    patterns = {
+        'performance_optimization': any(keyword in diff_content.lower() for keyword in 
+                                      ['cache', 'optimize', 'async', 'await', 'timeout', 'index', 'query']),
+        'error_handling': any(keyword in diff_content.lower() for keyword in 
+                            ['try', 'catch', 'exception', 'error', 'throw', 'validate']),
+        'testing_coverage': any(keyword in diff_content.lower() for keyword in 
+                              ['test', 'spec', 'assert', 'expect', 'mock', 'coverage']),
+        'security_enhancement': any(keyword in diff_content.lower() for keyword in 
+                                  ['auth', 'secure', 'validate', 'sanitize', 'permission', 'encrypt']),
+        'automation': any(keyword in diff_content.lower() for keyword in 
+                        ['automated', 'script', 'pipeline', 'deploy', 'ci', 'workflow']),
+        'scalability': any(keyword in diff_content.lower() for keyword in 
+                         ['scale', 'cluster', 'load', 'concurrent', 'parallel', 'distributed']),
+        'database_optimization': any(keyword in diff_content.lower() for keyword in 
+                                   ['sql', 'query', 'database', 'index', 'migration', 'transaction']),
+        'api_development': any(keyword in diff_content.lower() for keyword in 
+                             ['api', 'endpoint', 'request', 'response', 'http', 'rest']),
+        'architecture_refactor': (removed_lines > added_lines * 0.7) and any(keyword in diff_content.lower() for keyword in 
+                                ['refactor', 'restructure', 'modular', 'component']),
+        'integration': any(keyword in diff_content.lower() for keyword in 
+                         ['integrate', 'connect', 'sync', 'webhook', 'third-party'])
+    }
+    
+    # Generate impact-focused analysis with quantifiable elements
+    impact_statements = []
+    
+    if patterns['performance_optimization'] and complexity_score > 30:
+        impact_statements.append(f"Performance optimization implementation (complexity score: {complexity_score:.0f}/100)")
+        analysis_points.append("Potential for measurable response time improvements and resource efficiency gains")
+    
+    if patterns['error_handling'] and files_changed > 3:
+        impact_statements.append(f"Enhanced error handling across {files_changed} modules")
+        analysis_points.append("Likely improvement in system reliability and user experience metrics")
+    
+    if patterns['testing_coverage']:
+        impact_statements.append("Comprehensive testing implementation")
+        analysis_points.append("Expected increase in code coverage percentage and bug reduction")
+    
+    if patterns['security_enhancement']:
+        impact_statements.append("Security strengthening measures")
+        analysis_points.append("Enhanced system security posture and compliance improvements")
+    
+    if patterns['automation'] and total_changes > 50:
+        impact_statements.append(f"Automation pipeline development ({total_changes} lines of automation code)")
+        analysis_points.append("Potential for significant time savings and operational efficiency")
+    
+    if patterns['scalability']:
+        impact_statements.append("Scalability enhancement implementation")
+        analysis_points.append("Capability to handle increased load and user concurrency")
+    
+    if patterns['database_optimization']:
+        impact_statements.append("Database performance optimization")
+        analysis_points.append("Expected query performance improvements and resource optimization")
+    
+    if patterns['api_development'] and files_changed > 2:
+        impact_statements.append(f"API development across {files_changed} components")
+        analysis_points.append("Enhanced system integration and data exchange capabilities")
+    
+    if patterns['architecture_refactor']:
+        impact_statements.append("Architectural refactoring for maintainability")
+        analysis_points.append("Improved code maintainability and technical debt reduction")
+    
+    if patterns['integration']:
+        impact_statements.append("System integration implementation")
+        analysis_points.append("Enhanced connectivity and workflow automation potential")
+    
+    # Complexity and impact assessment
+    if total_changes > 200:
+        analysis_points.append("Major architectural contribution with high technical complexity")
+    elif total_changes > 100:
+        analysis_points.append("Significant feature implementation with moderate complexity")
+    elif files_changed > 5:
+        analysis_points.append("Cross-module integration with coordination complexity")
+    
+    # Build the analysis description with quantifiable focus
+    result = f"📊 QUANTIFIABLE METRICS:\n"
+    result += f"• Code Changes: +{commit_info.get('additions', 0)} additions, -{commit_info.get('deletions', 0)} deletions\n"
+    result += f"• Scope: {files_changed} files modified (complexity score: {complexity_score:.0f}/100)\n"
+    result += f"• Technical Depth: {len([p for p in patterns.values() if p])} improvement categories detected\n\n"
+    
+    result += f"🎯 TECHNICAL IMPACT ANALYSIS:\n"
+    if impact_statements:
+        for statement in impact_statements:
+            result += f"• {statement}\n"
+    else:
+        result += "• Code modifications and feature development\n"
+    
+    if analysis_points:
+        result += f"\n💡 POTENTIAL QUANTIFIABLE OUTCOMES:\n"
+        for point in analysis_points[:3]:  # Limit to top 3 most relevant
+            result += f"• {point}\n"
+    
+    result += f"\n📅 Implementation Date: {commit_info.get('date', 'Unknown')}\n"
+    result += f"🔗 Reference: {commit_info.get('url', 'N/A')}\n"
+    
+    return result
+
+
 async def process_resume_generation(websocket: WebSocket, session_data: GitHubSessionData, generation_id: str):
     """Process resume generation with repository cloning, analysis, and AI generation."""
     repo_url = session_data.repo_url
@@ -937,7 +1066,7 @@ async def process_resume_generation(websocket: WebSocket, session_data: GitHubSe
         repo_size_mb = repo_obj.size / 1024 if hasattr(repo_obj, 'size') else 0
         cache_key = f"large_repo:{owner}/{repo_name}"
         # Check redis cache for large repo flag
-        if redis_client:
+        if ENABLE_REPO_SIZE_LIMITS and redis_client:
             cached_large = await asyncio.to_thread(redis_client.get, cache_key)
             if cached_large == '1':
                 await websocket.send_text(json.dumps({
@@ -948,7 +1077,7 @@ async def process_resume_generation(websocket: WebSocket, session_data: GitHubSe
                 await save_generation_data(session_data.session_id, generation_id,
                                            {"status": "error", "error": "Large repository not supported."})
                 return False
-        if repo_size_mb > 150:  # 150 MB limit for fast pre-check
+        if ENABLE_REPO_SIZE_LIMITS and repo_size_mb > 150:  # 150 MB limit for fast pre-check
             if redis_client:
                 await asyncio.to_thread(redis_client.setex, cache_key, 86400, '1')  # Cache for 1 day
             await websocket.send_text(json.dumps({
@@ -997,7 +1126,7 @@ async def process_resume_generation(websocket: WebSocket, session_data: GitHubSe
             clone_result["repo_size_mb"] = stats["repo_size_mb"]
         file_count = clone_result["file_count"]
         cache_key = f"large_repo:{owner}/{repo_name}"
-        if redis_client:
+        if ENABLE_REPO_SIZE_LIMITS and redis_client:
             cached_large = await asyncio.to_thread(redis_client.get, cache_key)
             if cached_large == '1':
                 await websocket.send_text(json.dumps({
@@ -1014,7 +1143,7 @@ async def process_resume_generation(websocket: WebSocket, session_data: GitHubSe
                 session_data.local_path = None
                 await save_session(session_data)
                 return False
-        if file_count > 200:
+        if ENABLE_REPO_SIZE_LIMITS and file_count > 200:
             if redis_client:
                 await asyncio.to_thread(redis_client.setex, cache_key, 86400, '1')  # Cache for 1 day
             await websocket.send_text(json.dumps({
@@ -1056,6 +1185,87 @@ async def process_resume_generation(websocket: WebSocket, session_data: GitHubSe
         await save_generation_data(session_data.session_id, generation_id, {"status": "error", "error": error_msg})
         return False
 
+    # Filter by user commits if requested
+    if session_data.user_commits_only and session_data.github_token:
+        await websocket.send_text(json.dumps(
+            {"type": "status", "content": "🔍 Filtering your contributions...", "generation_id": generation_id}))
+        
+        try:
+            logging.info(f"🔍 Analyzing user contributions with token: {session_data.github_token[:10]}...")
+            
+            user_analysis = await asyncio.to_thread(
+                filter_repo_by_user_commits, 
+                clone_result['local_path'], 
+                session_data.github_token,
+                session_data.repo_url  # Pass repo_url for GitHub API access
+            )
+            
+            # Filter the ingest_result content to include only user's files
+            user_files = set(user_analysis["user_files"])
+            user_stats = user_analysis['user_stats']
+            analysis_method = user_analysis.get('analysis_method', 'unknown')
+            
+            logging.info(f"📊 User contributions ({analysis_method}): {len(user_files)} files, {user_analysis.get('total_user_commits', 0)} commits, {len(user_analysis.get('commit_diffs', []))} diffs collected")
+            
+            # Update the summary to reflect user contributions
+            ingest_result['summary'] = f"Analysis of {user_analysis['total_user_commits']} commits by {user_analysis['user_login']}"
+            
+            # Filter content by user files and add commit diffs
+            if 'content' in ingest_result and user_files:
+                original_files = len(ingest_result['content'])
+                filtered_content = {}
+                for file_path, content in ingest_result['content'].items():
+                    if file_path in user_files:
+                        filtered_content[file_path] = content
+                
+                logging.info(f"📁 Filtered content: {len(filtered_content)} files from {original_files} total files")
+                
+                # Convert filtered content back to string format and include commit diffs
+                content_lines = []
+                
+                # Add commit analysis section (abstracted for confidentiality)
+                commit_diffs = user_analysis.get('commit_diffs', [])
+                if commit_diffs:
+                    content_lines.append("\n=== USER'S TECHNICAL CONTRIBUTION ANALYSIS ===\n")
+                    content_lines.append("This section analyzes the user's commit patterns to identify technical improvements and impact.\n")
+                    
+                    for diff_info in commit_diffs:
+                        content_lines.append(f"\n--- Commit {diff_info['hash']}: {diff_info['message']} ---")
+                        
+                        # Analyze the diff for technical patterns instead of showing raw code
+                        diff_content = diff_info.get('diff', '')
+                        analysis = analyze_commit_technical_impact(diff_content, diff_info)
+                        content_lines.append(analysis)
+                        content_lines.append("")
+                        
+                    content_lines.append("\n=== TECHNICAL CONTRIBUTION SUMMARY ===")
+                    content_lines.append(f"Total commits analyzed: {len(commit_diffs)}")
+                    content_lines.append(f"Lines added: {user_stats.get('lines_added', 0)}")
+                    content_lines.append(f"Lines modified: {user_stats.get('lines_deleted', 0)}")
+                    content_lines.append(f"Files affected: {user_stats.get('files_modified', 0)}")
+                    content_lines.append(f"Technologies used: {', '.join(user_stats.get('languages', []))}")
+                    content_lines.append("\nFOCUS: Generate resume points based on TECHNICAL IMPACT and IMPROVEMENT PATTERNS, not specific code implementations.\n")
+                    content_lines.append("\n=== CURRENT FILE CONTEXT (GENERAL OVERVIEW) ===\n")
+                
+                # Add current file content  
+                for file_path, content in filtered_content.items():
+                    content_lines.append(f"\n--- {file_path} ---\n")
+                    content_lines.append(str(content))
+                    
+                ingest_result['content'] = "\n".join(content_lines)
+            
+            # Add user stats to the result
+            ingest_result['user_stats'] = user_stats
+            
+            await websocket.send_text(json.dumps(
+                {"type": "status", "content": f"✅ Found {len(user_files)} files with your contributions", "generation_id": generation_id}))
+                
+        except Exception as e:
+            logging.error({"message": "Failed to filter user commits", "error": str(e), "session_id": session_data.session_id})
+            await websocket.send_text(json.dumps(
+                {"type": "error", "content": f"Failed to filter user contributions: {str(e)}", "generation_id": generation_id}))
+            return False
+
     # --- Analytics: increment repos analyzed, repo size, and file count ---
     await increment_analytics_counter(ANALYTICS_TOTAL_REPOS_KEY)
     repo_size_mb = clone_result.get("repo_size_mb", 0)
@@ -1066,6 +1276,14 @@ async def process_resume_generation(websocket: WebSocket, session_data: GitHubSe
         {"type": "status", "content": "📝 Generating resume content with AI...", "generation_id": generation_id}))
     await save_generation_data(session_data.session_id, generation_id, {"status": "generating"})
 
+    # Log what we're passing to resume generation
+    user_stats = ingest_result.get('user_stats')
+    is_user_specific = user_stats is not None and bool(user_stats)
+    
+    logging.info(f"🚀 Resume generation - User-specific: {is_user_specific}")
+    if is_user_specific and user_stats:
+        logging.info(f"👤 User stats: {user_stats.get('total_commits', 0)} commits, {user_stats.get('lines_added', 0)} lines added")
+
     resume_result = await create_resume_tool(
         gitingest_summary=ingest_result['summary'],
         gitingest_tree=ingest_result['tree'],
@@ -1073,7 +1291,8 @@ async def process_resume_generation(websocket: WebSocket, session_data: GitHubSe
         project_name=clone_result['repo_name'],
         job_description=job_description,
         websocket=websocket,
-        generation_id=generation_id
+        generation_id=generation_id,
+        user_stats=user_stats  # Pass user stats if available
     )
 
     if not resume_result["success"]:
@@ -1180,17 +1399,35 @@ async def dynamic_github_route(request: Request, path: str):
 @app.post("/{path:path}", response_class=HTMLResponse)
 @limiter.limit("5/minute")
 async def dynamic_github_route_post(request: Request, path: str, repo_url: str = Form(...),
-                                    job_description_hidden: str = Form(""), github_token: Optional[str] = Form(None)):
+                                    job_description_hidden: str = Form(""), github_token: Optional[str] = Form(None),
+                                    user_commits_only: Optional[str] = Form(None),
+                                    user_commits_only_hidden: Optional[str] = Form(None)):
     """Handle POST requests for dynamic GitHub repository URLs."""
     repo_url = sanitize_input(repo_url, 200)
     job_description = sanitize_input(job_description_hidden, 5000)
     github_token = sanitize_input(github_token, 100) if github_token and validate_github_token(github_token) else None
+    
+    # Check both the checkbox and hidden input for user_commits_only
+    user_commits_only_bool = (user_commits_only == "on") or (user_commits_only_hidden == "on")
+    
+    logging.info(f"🔄 Form received - user_commits_only: {user_commits_only}, user_commits_only_hidden: {user_commits_only_hidden}, result: {user_commits_only_bool}")
 
     session_id = request.session.get("session_id")
     session_data = await get_session(session_id) if session_id else None
 
-    validation_result = await get_cached_repository_validation(repo_url, github_token or (
-        session_data.access_token if session_data else None))
+    effective_token = github_token or (session_data.access_token if session_data else None)
+    
+    # Validate that token is provided when user_commits_only is enabled
+    if user_commits_only_bool and not effective_token:
+        return templates.TemplateResponse("index.jinja", build_index_context(
+            request=request,
+            session_data=session_data,
+            repo_url=repo_url,
+            job_description=job_description,
+            error="GitHub authentication is required when analyzing only your contributions. Please sign in with GitHub.",
+            path=f"/{path}"
+        ))
+    validation_result = await get_cached_repository_validation(repo_url, effective_token or "")
     is_allowed, error_msg = await enforce_private_repo_auth(validation_result, session_data, github_token)
     if not is_allowed:
         return templates.TemplateResponse("index.jinja", build_index_context(
@@ -1213,16 +1450,20 @@ async def dynamic_github_route_post(request: Request, path: str, repo_url: str =
             access_token=None,
             repo_url=repo_url,
             job_description=job_description.strip() or None,
+            user_commits_only=user_commits_only_bool,
             status="pending"
         )
+        logging.info(f"🔄 Created new session - user_commits_only: {user_commits_only_bool}")
         # --- Analytics: increment unique users ---
         await increment_analytics_counter(ANALYTICS_TOTAL_USERS_KEY, session_id)
     else:
         session_data.repo_url = repo_url
         session_data.job_description = job_description.strip() or None
+        session_data.user_commits_only = user_commits_only_bool
         if github_token:
             session_data.github_token = github_token
         session_data.created_at = datetime.now(timezone.utc).isoformat()
+        logging.info(f"🔄 Updated existing session - user_commits_only: {user_commits_only_bool}")
         session_data.status = "pending"
         session_data.result = None
         session_data.local_path = None
@@ -1253,9 +1494,10 @@ async def home(request: Request):
 @app.post("/", response_class=HTMLResponse)
 @limiter.limit("5/minute")
 async def generate_resume(request: Request, repo_url: str = Form(...), job_description_hidden: str = Form(""),
-                          github_token: Optional[str] = Form(None)):
+                          github_token: Optional[str] = Form(None), user_commits_only: Optional[str] = Form(None),
+                          user_commits_only_hidden: Optional[str] = Form(None)):
     """Handle resume generation POST requests."""
-    return await dynamic_github_route_post(request, "", repo_url, job_description_hidden, github_token)
+    return await dynamic_github_route_post(request, "", repo_url, job_description_hidden, github_token, user_commits_only, user_commits_only_hidden)
 
 
 @app.websocket("/ws/{session_id}")
