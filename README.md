@@ -1,5 +1,8 @@
 # 🚀 GitResume
 
+> **⚠️ NOTICE: This project is no longer maintained or deployed due to lack of financial support.**  
+> The live service at gitresume.live is not available. You can still fork and self-host this project for your own use.
+
 *Transform your GitHub repositories into professional, ATS-optimized resumes using AI.*
 
 <div align="center">
@@ -26,7 +29,8 @@
 
 ## 🌐 Live Demo
 
-Try GitResume now: [gitresume.live](https://gitresume.live)
+~~Try GitResume now: [gitresume.live](https://gitresume.live)~~  
+**Note:** The live demo is no longer available. Please use the self-hosted installation instructions below.
 
 
 ## 📝 Overview
