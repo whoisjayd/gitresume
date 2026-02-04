@@ -7,3 +7,5 @@ sessions
 *.log
 .idea
 env.yaml
+.claude
+.omc
