@@ -57,22 +57,25 @@ jobs:
       - name: Build binary
         run: uv run python scripts/build.py
 
-      - name: Rename binary (Unix)
+      - name: Archive binary (Unix)
         if: runner.os != 'Windows'
         run: |
           OS_NAME=$(echo ${{ runner.os }} | tr '[:upper:]' '[:lower:]')
-          mv dist/gitresume dist/gitresume-${OS_NAME}
+          tar -czvf dist/gitresume-${OS_NAME}.tar.gz -C dist gitresume
 
-      - name: Rename binary (Windows)
+      - name: Archive binary (Windows)
         if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          move dist\gitresume.exe dist\gitresume-windows.exe
+          Compress-Archive -Path dist\gitresume.exe -DestinationPath dist\gitresume-windows.zip
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: gitresume-${{ matrix.os }}
-          path: dist/gitresume-*
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
 
   release:
     name: Create Release
@@ -94,7 +97,9 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/gitresume-*
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
           draft: false
           prerelease: false
           generate_release_notes: true

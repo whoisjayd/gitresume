@@ -5,11 +5,6 @@
 GitResume is a CLI tool that analyzes your local or remote repositories, extracts technical achievements, and generates impactful resume bullet points, tech stack summaries, and interview preparation materials.
 
 <div align="center">
-  <img src="https://raw.githubusercontent.com/WhoIsJayD/gitresume/main/docs/images/cli_demo.png" alt="GitResume CLI Demo" width="100%"/>
-  <p><em>(Placeholder for Rich UI Screenshot)</em></p>
-</div>
-
-<div align="center">
 
 [![PyPI version](https://img.shields.io/pypi/v/gitresume.svg)](https://pypi.org/project/gitresume/)
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/downloads/)
