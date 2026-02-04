@@ -299,5 +299,84 @@ def generate(
     console.print(snippet + "\n...")
 
 
+@app.command()
+def bulk(
+    input_file: str = typer.Argument(..., help="Path to a text/json/csv file with repo paths."),
+    concurrency: int = typer.Option(5, "--concurrency", "-c", help="Number of parallel tasks."),
+    mode: str = typer.Option("analyze", "--mode", "-m", help="Processing mode: 'analyze' or 'generate'."),
+    output_dir: str = typer.Option("artifacts", "--output-dir", "-o", help="Directory to save artifacts."),
+    model: str | None = typer.Option(None, "--model", help="LLM model to use (for generate mode)."),
+    job_description: str | None = typer.Option(
+        None, "--jd", "--job-description", help="Job description (for generate mode)."
+    ),
+):
+    """Process multiple repositories in bulk."""
+    import asyncio
+
+    from rich.console import Console
+    from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
+    from rich.table import Table
+
+    from gitresume_core.bulk import parse_input_file, process_bulk
+
+    console = Console()
+
+    try:
+        inputs = parse_input_file(input_file)
+    except Exception as e:
+        console.print(f"[bold red]Error parsing input file:[/bold red] {e}")
+        raise typer.Exit(code=1) from e
+
+    if not inputs:
+        console.print("[bold yellow]No inputs found in the file.[/bold yellow]")
+        return
+
+    console.print(f"[bold blue]Bulk processing {len(inputs)} repositories in '{mode}' mode...[/bold blue]")
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task(f"Processing {mode}...", total=len(inputs))
+
+        def progress_callback(input_path, success):
+            progress.advance(task)
+            status = "[green]OK[/green]" if success else "[red]FAIL[/red]"
+            progress.console.print(f"{status} {input_path}")
+
+        report = asyncio.run(
+            process_bulk(
+                inputs=inputs,
+                mode=mode,
+                concurrency=concurrency,
+                output_dir=output_dir,
+                model=model,
+                job_description=job_description,
+                progress_callback=progress_callback,
+            )
+        )
+
+    # Print Summary Table
+    console.print("\n[bold blue]Bulk Processing Summary[/bold blue]")
+    table = Table()
+    table.add_column("Result", style="cyan")
+    table.add_column("Count", style="magenta")
+
+    table.add_row("Total", str(report["total"]))
+    table.add_row("Success", f"[green]{report['success']}[/green]")
+    table.add_row("Failed", f"[red]{report['failed']}[/red]")
+
+    console.print(table)
+
+    if report["failed"] > 0:
+        console.print("\n[bold red]Failures:[/bold red]")
+        for detail in report["details"]:
+            if not detail["success"]:
+                console.print(f"- {detail['input']}: {detail['error']}")
+
+
 if __name__ == "__main__":
     app()
