@@ -7,22 +7,22 @@ import logging
 import os
 import re
 from dataclasses import dataclass
-from typing import Any, AsyncGenerator, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
-from .api_utils import APIClientFactory, execute_with_retry
+from .llm import llm_client
+from .prompts import GRAMMAR_PROMPT_TEMPLATE
 
 logger = logging.getLogger(__name__)
 
 LOW_COST_MODELS = {
-    "gemini": "gemini-2.0-flash-lite",
-    "openai": "gpt-3.5-turbo",
-    "groq": "llama3-8b-8192",
-    "claude": "claude-3-haiku-20240307",
+    "gemini": "gemini/gemini-2.0-flash-lite",
+    "openai": "openai/gpt-3.5-turbo",
+    "groq": "groq/llama3-8b-8192",
+    "claude": "anthropic/claude-3-haiku-20240307",
 }
 
 GRAMMAR_PROVIDER = os.getenv("GRAMMAR_PROVIDER", "gemini").lower()
-text_processor = None
-
+GRAMMAR_MODEL = os.getenv("GRAMMAR_MODEL") or LOW_COST_MODELS.get(GRAMMAR_PROVIDER, "gemini/gemini-2.0-flash-lite")
 
 class LocalGrammarFixer:
     @staticmethod
@@ -37,55 +37,24 @@ class LocalGrammarFixer:
 
 
 class AIGrammarChecker:
-    def __init__(self, client_factory: APIClientFactory):
-        self.client_factory = client_factory
-        self.provider = client_factory.provider
-        self.model_version = LOW_COST_MODELS.get(self.provider)
+    def __init__(self, model: str = GRAMMAR_MODEL):
+        self.model = model
 
     async def correct_text_async(self, text: str) -> str:
         if not text or not text.strip():
             return text
-        prompt = f"""You are a professional grammar and writing assistant. Your task is to correct grammar, spelling, and spacing issues in the provided text while preserving the original meaning and technical terminology.
-                RULES:
-                1. Fix grammatical errors, spelling mistakes, and spacing issues
-                2. Preserve all technical terms, variable names, and domain-specific vocabulary
-                3. Maintain the original tone and style
-                4. Fix word spacing issues where words are incorrectly combined (e.g., "webapplication" → "web application")
-                5. Do NOT change the meaning or add new information
-                6. Return ONLY the corrected text, no explanations or formatting
-                Text to correct: {text}
-                Corrected text"""
 
-        async def operation(client) -> AsyncGenerator[str, None]:
-            if self.provider == "gemini":
-                response = await client.generate_content_async(prompt)
-                yield response.text.strip() if response.text else text
-            elif self.provider in ["openai", "groq"]:
-                model_map = {"openai": "gpt-4-turbo", "groq": "llama3-70b-8192"}
-                response = await client.chat.completions.create(
-                    model=model_map.get(self.provider, self.model_version),
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.0,
-                    max_tokens=2048,
-                )
-                yield (response.choices[0].message.content.strip() if response.choices else text)
-            elif self.provider == "claude":
-                response = await client.messages.create(
-                    model=self.model_version,
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.0,
-                    max_tokens=2048,
-                )
-                yield response.content[0].text.strip() if response.content else text
+        prompt = GRAMMAR_PROMPT_TEMPLATE.format(text=text)
 
         try:
-            async for corrected_text in execute_with_retry(
-                operation, [self.client_factory], max_retries_per_provider=2
-            ):
-                return corrected_text
-            return text
+            corrected_text = await llm_client.generate_completion(
+                messages=[{"role": "user", "content": prompt}],
+                model=self.model,
+                temperature=0.0
+            )
+            return corrected_text.strip() if corrected_text else text
         except Exception as e:
-            logger.warning(f"AI grammar correction failed for '{self.provider}': {e}. Returning original text.")
+            logger.warning(f"AI grammar correction failed for model '{self.model}': {e}. Returning original text.")
             return text
 
 
@@ -115,23 +84,17 @@ class ConcurrentTextProcessor:
                 logger.error(f"Error in text processing job {i}: {result}")
 
 
-def initialize_grammar_checker():
-    global text_processor
+def initialize_grammar_checker() -> Optional[ConcurrentTextProcessor]:
     try:
-        keys = os.getenv(f"{GRAMMAR_PROVIDER.upper()}_API_KEYS", "")
-        premium_key = os.getenv(f"{GRAMMAR_PROVIDER.upper()}_PREMIUM_API_KEY", "")
-        if keys or premium_key:
-            factory = APIClientFactory(GRAMMAR_PROVIDER, keys, premium_key)
-            checker = AIGrammarChecker(factory)
-            text_processor = ConcurrentTextProcessor(checker)
-            logger.info(f"Initialized AI grammar checker with provider: '{GRAMMAR_PROVIDER}'")
-        else:
-            logger.warning(f"No API keys for grammar provider '{GRAMMAR_PROVIDER}'. AI grammar check disabled.")
+        # LiteLLM handles API keys from env variables directly
+        checker = AIGrammarChecker()
+        return ConcurrentTextProcessor(checker)
     except Exception as e:
         logger.error(f"Failed to initialize AI grammar checker: {e}")
+        return None
 
 
-initialize_grammar_checker()
+text_processor = initialize_grammar_checker()
 
 
 async def correct_resume_grammar(resume_data: Dict[str, Any]) -> Dict[str, Any]:

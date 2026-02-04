@@ -9,3 +9,11 @@ sessions
 env.yaml
 .claude
 .omc
+.litellm_cache/
+.coverage
+dist/
+build/
+*.spec
+artifacts/
+temp_artifacts/
+node_modules/

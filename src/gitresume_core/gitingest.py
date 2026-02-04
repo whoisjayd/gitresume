@@ -606,30 +606,35 @@ try:
     PARSER = Parser()
 
     language_loaders = {
-        ".py": lambda: Language(__import__("tree_sitter_python").language(), "python"),
-        ".js": lambda: Language(__import__("tree_sitter_javascript").language(), "javascript"),
-        ".jsx": lambda: Language(__import__("tree_sitter_javascript").language(), "javascript"),
-        ".go": lambda: Language(__import__("tree_sitter_go").language(), "go"),
-        ".rs": lambda: Language(__import__("tree_sitter_rust").language(), "rust"),
-        ".java": lambda: Language(__import__("tree_sitter_java").language(), "java"),
-        ".c": lambda: Language(__import__("tree_sitter_c").language(), "c"),
-        ".cpp": lambda: Language(__import__("tree_sitter_cpp").language(), "cpp"),
-        ".h": lambda: Language(__import__("tree_sitter_c").language(), "c"),
-        ".hpp": lambda: Language(__import__("tree_sitter_cpp").language(), "cpp"),
-        ".cs": lambda: Language(__import__("tree_sitter_c_sharp").language(), "c_sharp"),
+        ".py": lambda: __import__("tree_sitter_python").language(),
+        ".js": lambda: __import__("tree_sitter_javascript").language(),
+        ".jsx": lambda: __import__("tree_sitter_javascript").language(),
+        ".go": lambda: __import__("tree_sitter_go").language(),
+        ".rs": lambda: __import__("tree_sitter_rust").language(),
+        ".java": lambda: __import__("tree_sitter_java").language(),
+        ".c": lambda: __import__("tree_sitter_c").language(),
+        ".cpp": lambda: __import__("tree_sitter_cpp").language(),
+        ".h": lambda: __import__("tree_sitter_c").language(),
+        ".hpp": lambda: __import__("tree_sitter_cpp").language(),
+        ".cs": lambda: __import__("tree_sitter_c_sharp").language(),
     }
 
     try:
         from tree_sitter_typescript import language_tsx, language_typescript
 
-        language_loaders[".ts"] = lambda: Language(language_typescript(), "typescript")
-        language_loaders[".tsx"] = lambda: Language(language_tsx(), "tsx")
+        language_loaders[".ts"] = lambda: language_typescript()
+        language_loaders[".tsx"] = lambda: language_tsx()
     except (ImportError, AttributeError):
         logger.warning("tree-sitter-typescript not found or invalid. TypeScript analysis disabled.")
 
     for ext, loader in language_loaders.items():
         try:
-            LANGUAGE_MAP[ext] = loader()
+            lang_obj = loader()
+            # In tree-sitter 0.21+, the language provider returns the Language object
+            # If it returns a capsule/raw pointer, we might need to wrap it
+            if not isinstance(lang_obj, Language):
+                lang_obj = Language(lang_obj)
+            LANGUAGE_MAP[ext] = lang_obj
         except Exception as e:
             logger.warning(f"Could not load tree-sitter language for '{ext}'. Error: {e}")
 
@@ -694,7 +699,8 @@ def _extract_ast_metrics(tree: Any, lang: Any) -> Dict[str, Any]:
         if not query_str:
             return 0
         try:
-            query = lang.query(query_str)
+            from tree_sitter import Query
+            query = Query(lang, query_str)
             return len(query.captures(tree.root_node))
         except Exception:
             return 0
@@ -733,7 +739,7 @@ async def _process_file(file_path: Path, repo_root: Path) -> Optional[Dict[str, 
             parser_lang = LANGUAGE_MAP[file_info["extension"]]
 
             def parse_sync():
-                PARSER.set_language(parser_lang)
+                PARSER.language = parser_lang
                 return PARSER.parse(bytes(content, "utf8"))
 
             tree = await asyncio.to_thread(parse_sync)

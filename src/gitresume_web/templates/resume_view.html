@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resume View - {{ run_id }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body class="bg-gray-100 text-gray-900 font-sans antialiased">
+    <div class="max-w-4xl mx-auto px-4 py-12">
+        <nav class="mb-8 print:hidden">
+            <a href="/runs/{{ run_id }}" class="text-blue-600 hover:text-blue-800 flex items-center font-medium">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                Back to Run Details
+            </a>
+        </nav>
+
+        <div class="bg-white shadow-2xl rounded-2xl overflow-hidden border border-gray-200">
+            <div class="p-8 md:p-12" id="resume-content">
+                <!-- Markdown will be rendered here -->
+                <div class="animate-pulse flex space-y-4 flex-col">
+                    <div class="h-8 bg-gray-200 rounded w-1/2"></div>
+                    <div class="h-4 bg-gray-200 rounded w-full"></div>
+                    <div class="h-4 bg-gray-200 rounded w-full"></div>
+                    <div class="h-4 bg-gray-200 rounded w-3/4"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-8 flex justify-center gap-4 print:hidden">
+            <button onclick="window.print()" class="bg-gray-800 hover:bg-black text-white px-6 py-3 rounded-xl font-bold shadow-lg transition-all flex items-center">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                Print Resume / Save as PDF
+            </button>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('resume-content').innerHTML = marked.parse({{ resume_md|tojson }});
+    </script>
+
+    <style>
+        /* Basic prose styles for the rendered markdown */
+        #resume-content h1 { font-size: 2.25rem; font-weight: 800; margin-bottom: 1.5rem; color: #111827; border-bottom: 2px solid #E5E7EB; padding-bottom: 0.5rem; }
+        #resume-content h2 { font-size: 1.5rem; font-weight: 700; margin-top: 2rem; margin-bottom: 1rem; color: #1F2937; text-transform: uppercase; letter-spacing: 0.05em; border-left: 4px solid #3B82F6; padding-left: 1rem; }
+        #resume-content h3 { font-size: 1.25rem; font-weight: 600; margin-top: 1.5rem; margin-bottom: 0.5rem; color: #374151; }
+        #resume-content p { margin-bottom: 1rem; line-height: 1.6; color: #4B5563; }
+        #resume-content ul { list-style-type: disc; margin-left: 1.5rem; margin-bottom: 1rem; }
+        #resume-content li { margin-bottom: 0.5rem; color: #4B5563; }
+        #resume-content strong { color: #111827; font-weight: 600; }
+        #resume-content a { color: #2563EB; text-decoration: underline; }
+
+        @media print {
+            body { background: white; padding: 0; }
+            .max-w-4xl { max-width: 100%; width: 100%; margin: 0; padding: 0; }
+            .shadow-2xl { shadow: none; border: none; }
+            #resume-content { padding: 0; }
+        }
+    </style>
+</body>
+</html>

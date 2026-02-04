@@ -15,7 +15,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-def _remove_readonly(func, path, exc_info):
+def _remove_readonly(func, path, exc):
     """
     Error handler for shutil.rmtree.
 
@@ -26,10 +26,12 @@ def _remove_readonly(func, path, exc_info):
     Args:
         func (callable): The function that raised the exception (e.g., os.remove).
         path (str): The path to the file that caused the error.
-        exc_info (tuple): The exception information from sys.exc_info().
+        exc (BaseException or tuple): The exception instance (onexc) or exc_info tuple (onerror).
     """
-    # exc_info[1] contains the exception instance
-    if isinstance(exc_info[1], (PermissionError, OSError)):
+    # Handle both onexc (exception instance) and onerror (exc_info tuple)
+    exception = exc[1] if isinstance(exc, tuple) else exc
+
+    if isinstance(exception, (PermissionError, OSError)):
         try:
             logger.debug(f"Permission error at {path}. Changing permissions and retrying.")
             os.chmod(path, stat.S_IWRITE)
@@ -38,7 +40,7 @@ def _remove_readonly(func, path, exc_info):
             logger.warning(f"Failed to remove {path} even after changing permissions. Error: {e}")
     else:
         # Re-raise the exception if it's not a permission error
-        raise exc_info[1]
+        raise exception
 
 
 def robust_rmtree(path: str, max_retries: int = 3, delay_secs: float = 1.0) -> None:
@@ -62,7 +64,12 @@ def robust_rmtree(path: str, max_retries: int = 3, delay_secs: float = 1.0) -> N
 
     for attempt in range(max_retries):
         try:
-            shutil.rmtree(path_obj, onerror=_remove_readonly)
+            # Use onexc for Python 3.12+, fallback to onerror for older versions
+            import sys
+            if sys.version_info >= (3, 12):
+                shutil.rmtree(path_obj, onexc=_remove_readonly)
+            else:
+                shutil.rmtree(path_obj, onerror=_remove_readonly)
             logger.info(f"Successfully removed directory: {path}")
             return
         except Exception as e:

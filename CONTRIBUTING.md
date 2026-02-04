@@ -2,6 +2,28 @@
 
 Thank you for your interest in contributing! Please follow these guidelines to help us maintain a high-quality project.
 
+## Local Development Setup
+
+We use [uv](https://github.com/astral-sh/uv) for dependency management.
+
+1.  **Clone the Repository**:
+    ```bash
+    git clone https://github.com/whoisjayd/gitresume.git
+    cd gitresume
+    ```
+2.  **Setup Environment**:
+    ```bash
+    uv sync
+    ```
+3.  **Run CLI locally**:
+    ```bash
+    uv run gitresume --help
+    ```
+4.  **Run Tests**:
+    ```bash
+    uv run pytest
+    ```
+
 ## How to Contribute
 
 - Fork the repository and clone it locally.

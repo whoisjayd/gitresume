@@ -15,6 +15,8 @@ dependencies = [
     "fastapi>=0.128.0",
     "jinja2>=3.1.6",
     "litellm>=1.81.7",
+    "diskcache>=5.6.3",
+    "tenacity>=9.0.0",
     "pydantic>=2.12.5",
     "pygithub>=2.8.1",
     "rich>=14.3.2",
@@ -42,6 +44,21 @@ ignore = ["E402", "E501"] # Allow imports not at top of file and long lines for 
 
 [project.scripts]
 gitresume = "gitresume_cli.main:app"
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.18.0",
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.9.4",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+addopts = "--cov=gitresume_core --cov=gitresume_cli --cov-report=term-missing"
 
 [tool.pyright]
 include = ["src"]

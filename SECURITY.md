@@ -1,5 +1,7 @@
 # Security Policy
 
+GitResume takes the security of your code and API keys seriously. For detailed information on data handling, API key redaction, and how we interact with LLM providers, please see our full [Security Documentation](docs/security.md).
+
 ## Reporting a Vulnerability
 
 If you discover a security vulnerability, please do the following:
