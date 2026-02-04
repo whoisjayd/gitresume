@@ -7,7 +7,7 @@ packages = ["src/gitresume_core", "src/gitresume_cli", "src/gitresume_web"]
 
 [project]
 name = "gitresume"
-version = "0.0.2"
+version = "0.1.0"
 description = "Generate professional resumes from your GitHub repositories."
 readme = "README.md"
 requires-python = ">=3.10"
