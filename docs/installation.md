@@ -80,3 +80,15 @@ Generates a resume from an analysis artifact or repo path.
 Launches the local viewer dashboard.
 - `--port, -p`: Port to run the dashboard on (default: `8000`).
 - `--no-open`: Prevents the browser from opening automatically.
+
+### `gitresume bulk [INPUT_FILE]`
+Processes multiple repositories in bulk.
+- `INPUT_FILE`: Path to a file containing repository paths or URLs.
+  - **.txt**: One path/URL per line.
+  - **.json**: A JSON array of strings.
+  - **.csv**: CSV where the first column contains the path/URL.
+- `--mode, -m`: Processing mode, either `analyze` or `generate` (default: `analyze`).
+- `--concurrency, -c`: Number of parallel tasks to run (default: `5`).
+- `--output-dir, -o`: Directory to store analysis artifacts (default: `artifacts`).
+- `--model`: LLM model to use (only for `generate` mode).
+- `--jd`: Job description for tailoring (only for `generate` mode).

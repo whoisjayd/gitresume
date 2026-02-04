@@ -78,6 +78,14 @@ Start the local dashboard to browse your artifacts and view your resumes.
 gitresume web
 ```
 
+### 4. Bulk Processing
+Process multiple repositories at once using a text file, JSON, or CSV containing paths or URLs.
+
+```bash
+# Analyze multiple repos in parallel
+gitresume bulk repos.txt --mode analyze --concurrency 10
+```
+
 ---
 
 ## 🔧 Configuration
