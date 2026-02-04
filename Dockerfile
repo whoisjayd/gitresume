@@ -1,40 +1,34 @@
-FROM python:3.11-slim-bullseye AS builder
+# Use a slim Python image for the build stage
+FROM python:3.12-slim AS builder
 
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+# Set working directory
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+# Copy configuration files
+COPY pyproject.toml uv.lock ./
 
-ENV VIRTUAL_ENV=/opt/venv
-RUN python3 -m venv $VIRTUAL_ENV
-ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+# Install dependencies
+RUN uv sync --frozen --no-dev
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+# Final stage
+FROM python:3.12-slim
 
-FROM python:3.11-slim-bullseye
+# Copy uv from builder (if needed for runtime, though uv run is used)
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
+# Set working directory
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git \
-    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+# Copy the virtual environment and source code
+COPY --from=builder /app/.venv /app/.venv
+COPY src ./src
+COPY pyproject.toml uv.lock ./
 
-RUN addgroup --system appgroup && \
-    adduser --system --no-create-home --ingroup appgroup appuser
+# Ensure the virtual environment is used
+ENV PATH="/app/.venv/bin:$PATH"
 
-COPY --from=builder --chown=appuser:appgroup /opt/venv /opt/venv
-
-COPY --chown=appuser:appgroup . .
-
-USER appuser
-
-ENV PATH="/opt/venv/bin:$PATH"
-ENV PYTHONUNBUFFERED=1
-ENV ENVIRONMENT=production
-
-EXPOSE 8080
-
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
+# Entrypoint
+ENTRYPOINT ["uv", "run", "gitresume"]

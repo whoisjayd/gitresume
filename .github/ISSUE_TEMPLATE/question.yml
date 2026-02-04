@@ -1,0 +1,26 @@
+name: Question
+description: Ask a question about GitResume.
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for asking a question! Please check if your question has already been answered in the [Discussions](https://github.com/whoisjayd/gitresume/discussions).
+  - type: textarea
+    id: question
+    attributes:
+      label: What is your question?
+      description: A concise description of what you're wondering about.
+      placeholder: e.g., How do I customize the template colors?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Provide any context or background information that might help us answer your question.
+  - type: textarea
+    id: examples
+    attributes:
+      label: Examples (Optional)
+      description: If applicable, provide links or examples related to your question.

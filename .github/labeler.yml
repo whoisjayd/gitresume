@@ -1,0 +1,41 @@
+# Labels based on changed files
+
+"area:cli":
+  - changed-files:
+    - any-glob-to-any-file: 'src/gitresume_cli/**/*'
+
+"area:core":
+  - changed-files:
+    - any-glob-to-any-file: 'src/gitresume_core/**/*'
+
+"area:web":
+  - changed-files:
+    - any-glob-to-any-file: 'src/gitresume_web/**/*'
+
+"area:docs":
+  - changed-files:
+    - any-glob-to-any-file: ['docs/**/*', '*.md']
+
+"area:ci":
+  - changed-files:
+    - any-glob-to-any-file: ['.github/**/*', 'scripts/**/*', 'Makefile', 'pyproject.toml']
+
+feat:
+  - changed-files:
+    - any-glob-to-any-file: ['src/**', 'pyproject.toml']
+
+fix:
+  - changed-files:
+    - any-glob-to-any-file: 'src/**'
+
+docs:
+  - changed-files:
+    - any-glob-to-any-file: ['docs/**', '*.md']
+
+ci:
+  - changed-files:
+    - any-glob-to-any-file: ['.github/**', 'scripts/**']
+
+"area:test":
+  - changed-files:
+    - any-glob-to-any-file: 'tests/**'
