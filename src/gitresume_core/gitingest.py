@@ -6,7 +6,7 @@ import asyncio
 import logging
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 import aiofiles
 
@@ -730,6 +730,25 @@ async def _process_file(file_path: Path, repo_root: Path) -> dict[str, Any] | No
         return None
 
 
+class LanguageMetrics(TypedDict):
+    files: int
+    functions: int
+    classes: int
+
+
+class CodeMetrics(TypedDict):
+    total_functions: int
+    total_classes: int
+    languages: dict[str, LanguageMetrics]
+
+
+class Summary(TypedDict):
+    total_files_processed: int
+    total_size_bytes: int
+    file_types: dict[str, int]
+    code_metrics: CodeMetrics
+
+
 async def gitingest_tool(repo_path: str) -> dict[str, Any]:
     repo_root = Path(repo_path).resolve()
     if not (repo_root.exists() and repo_root.is_dir() and (repo_root / ".git").exists()):
@@ -765,11 +784,17 @@ async def gitingest_tool(repo_path: str) -> dict[str, Any]:
         tasks.append(_process_file(file_path, repo_root))
     processed_files_info = await asyncio.gather(*tasks)
 
-    summary: dict[str, Any] = {
+    # Initialize with strict types for MyPy
+    code_metrics: CodeMetrics = {
+        "total_functions": 0,
+        "total_classes": 0,
+        "languages": {},
+    }
+    summary: Summary = {
         "total_files_processed": 0,
         "total_size_bytes": 0,
         "file_types": {},
-        "code_metrics": {"total_functions": 0, "total_classes": 0, "languages": {}},
+        "code_metrics": code_metrics,
     }
     all_content = {}
     for file_info in filter(None, processed_files_info):
@@ -779,10 +804,13 @@ async def gitingest_tool(repo_path: str) -> dict[str, Any]:
         summary["file_types"][ext] = summary["file_types"].get(ext, 0) + 1
         all_content[file_info["path"]] = file_info["content_preview"]
         if file_info["metrics"]:
-            metrics, lang_metrics = (
-                file_info["metrics"],
-                summary["code_metrics"]["languages"].setdefault(ext, {"files": 0, "functions": 0, "classes": 0}),
-            )
+            metrics = file_info["metrics"]
+            # Safely get or create language metrics
+            if ext not in summary["code_metrics"]["languages"]:
+                summary["code_metrics"]["languages"][ext] = {"files": 0, "functions": 0, "classes": 0}
+
+            lang_metrics = summary["code_metrics"]["languages"][ext]
+
             summary["code_metrics"]["total_functions"] += metrics.get("functions", 0)
             summary["code_metrics"]["total_classes"] += metrics.get("classes", 0)
             lang_metrics["files"] += 1
