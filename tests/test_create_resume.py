@@ -1,11 +1,13 @@
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
+
 from gitresume_core.create_resume import (
-    resume_to_markdown,
     _build_prompt,
     create_resume_tool,
-    generate_resume_from_data
+    resume_to_markdown,
 )
+
 
 def test_resume_to_markdown():
     data = {
@@ -13,7 +15,7 @@ def test_resume_to_markdown():
         "tech_stack": ["Python", "Pytest"],
         "bullet_points": ["Improved test coverage", "Fixed bugs"],
         "future_plans": "Scale to millions",
-        "interview_questions": ["How do you scale?", "What is TDD?"]
+        "interview_questions": ["How do you scale?", "What is TDD?"],
     }
     md = resume_to_markdown(data)
     assert "# Test Project" in md
@@ -22,12 +24,14 @@ def test_resume_to_markdown():
     assert "## Future Plans" in md
     assert "- How do you scale?" in md
 
+
 def test_build_prompt():
     prompt = _build_prompt("Summary", "Tree", "Content", "Job Description")
     assert "Summary" in prompt
     assert "Tree" in prompt
     assert "Content" in prompt
     assert "Job Description" in prompt
+
 
 @pytest.mark.asyncio
 @patch("gitresume_core.create_resume._generate_and_parse_response", new_callable=AsyncMock)
@@ -37,10 +41,7 @@ async def test_create_resume_tool(mock_grammar, mock_gen):
     mock_grammar.return_value = {"project_title": "AI Project", "tech_stack": ["LLM"]}
 
     result = await create_resume_tool(
-        gitingest_summary="Summary",
-        gitingest_tree="Tree",
-        gitingest_content="Content",
-        generation_id="test_id"
+        gitingest_summary="Summary", gitingest_tree="Tree", gitingest_content="Content", generation_id="test_id"
     )
 
     assert result["success"] is True
@@ -49,10 +50,12 @@ async def test_create_resume_tool(mock_grammar, mock_gen):
     mock_gen.assert_called_once()
     mock_grammar.assert_called_once()
 
+
 @pytest.mark.asyncio
 async def test_emit_ws_message():
-    from gitresume_core.create_resume import _emit_ws_message
     from starlette.websockets import WebSocketState
+
+    from gitresume_core.create_resume import _emit_ws_message
 
     mock_ws = AsyncMock()
     mock_ws.client_state = WebSocketState.CONNECTED
@@ -60,14 +63,17 @@ async def test_emit_ws_message():
     await _emit_ws_message(mock_ws, "test_type", "test_content", "gen_id")
     mock_ws.send_json.assert_called_once()
 
+
 @pytest.mark.asyncio
 @patch("gitresume_core.create_resume.llm_client.generate_json_completion", new_callable=AsyncMock)
 async def test_generate_and_parse_response_fail(mock_json_gen):
     from gitresume_core.create_resume import _generate_and_parse_response
+
     mock_json_gen.side_effect = Exception("LLM Error")
 
     with pytest.raises(ValueError, match="AI response was not valid JSON"):
         await _generate_and_parse_response("prompt")
+
 
 @pytest.mark.asyncio
 @patch("gitresume_core.create_resume._generate_and_parse_response", new_callable=AsyncMock)
@@ -84,7 +90,7 @@ async def test_create_resume_tool_truncation(mock_grammar, mock_gen):
         gitingest_tree="Tree",
         gitingest_content=long_content,
         generation_id="test_trunc",
-        job_description=long_jd
+        job_description=long_jd,
     )
 
     assert result["success"] is True
@@ -93,7 +99,8 @@ async def test_create_resume_tool_truncation(mock_grammar, mock_gen):
     # Check that _generate_and_parse_response was called with truncated content
     args, _ = mock_gen.call_args
     prompt = args[0]
-    assert len(prompt) < 44000 # Should be truncated
+    assert len(prompt) < 44000  # Should be truncated
+
 
 @pytest.mark.asyncio
 async def test_create_resume_tool_exception():

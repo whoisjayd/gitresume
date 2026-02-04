@@ -41,3 +41,7 @@
 - name: "area:ci"
   color: "c5def5"
   description: "Related to CI/CD and build scripts"
+
+- name: "area:test"
+  color: "ffaf3a"
+  description: "Related to tests and test infrastructure"

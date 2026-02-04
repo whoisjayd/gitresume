@@ -1,4 +1,3 @@
-
 import pytest
 
 from gitresume_core.gitingest import gitingest_tool
@@ -10,6 +9,7 @@ async def test_gitingest_invalid_repo(tmp_path):
     result = await gitingest_tool(str(tmp_path))
     assert result["success"] is False
     assert "not a valid Git repository" in result["error"]
+
 
 @pytest.mark.asyncio
 async def test_gitingest_basic_repo(tmp_path):
@@ -34,7 +34,7 @@ async def test_gitingest_basic_repo(tmp_path):
 
     assert result["success"] is True
     assert "main.py" in result["content"]
-    assert "readme.txt" not in result["content"] # .txt is in IGNORE_EXTENSIONS
+    assert "readme.txt" not in result["content"]  # .txt is in IGNORE_EXTENSIONS
 
     summary = result["summary"]
     assert summary["total_files_processed"] >= 1

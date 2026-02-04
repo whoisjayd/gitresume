@@ -1,11 +1,10 @@
-from typing import Optional
-
 import typer
 
 app = typer.Typer(
     help="GitResume CLI - Generate professional resumes from your GitHub repositories.",
     no_args_is_help=True,
 )
+
 
 @app.command()
 def doctor():
@@ -23,9 +22,13 @@ def doctor():
     table = Table(show_header=False, box=None)
 
     def add_check(name, status, message=""):
-        status_str = f"[bold green]Pass[/bold green]" if status == "pass" else \
-                     f"[bold red]Fail[/bold red]" if status == "fail" else \
-                     f"[bold yellow]Warn[/bold yellow]"
+        status_str = (
+            "[bold green]Pass[/bold green]"
+            if status == "pass"
+            else "[bold red]Fail[/bold red]"
+            if status == "fail"
+            else "[bold yellow]Warn[/bold yellow]"
+        )
         table.add_row(name, f"[{status_str}]", message)
 
     # 1. Python Version
@@ -63,19 +66,23 @@ def doctor():
 
     console.print(Panel(table, title="[bold blue]GitResume Health Check[/bold blue]", expand=False))
 
+
 @app.command()
 def version():
     """Show the version of GitResume."""
     from gitresume_core.version import get_tool_version
+
     typer.echo(f"GitResume version: {get_tool_version()}")
+
 
 @app.command()
 def analyze(
     path: str = typer.Argument(".", help="Path to the Git repository to analyze."),
-    output_dir: str = typer.Option("artifacts", "--output-dir", "-o", help="Directory to save artifacts.")
+    output_dir: str = typer.Option("artifacts", "--output-dir", "-o", help="Directory to save artifacts."),
 ):
     """Analyze a Git repository and produce an artifact bundle."""
     import asyncio
+
     asyncio.run(_run_analysis(path, output_dir))
 
 
@@ -110,7 +117,7 @@ async def _run_analysis(path: str, output_dir: str):
     except Exception as e:
         logger.error(f"Analysis failed: {e}")
         console.print(f"[bold red]Error during analysis:[/bold red] {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
     if not result.get("success"):
         logger.error(f"Analysis failed: {result.get('error')}")
@@ -122,9 +129,11 @@ async def _run_analysis(path: str, output_dir: str):
 
     # 5. Update Manifest and finalize
     summary = result.get("summary", {})
-    manager.update_stats({
-        "file_counts": summary.get("file_types", {}),
-    })
+    manager.update_stats(
+        {
+            "file_counts": summary.get("file_types", {}),
+        }
+    )
     manager.finalize()
 
     # 6. Print summary table via rich
@@ -145,19 +154,22 @@ async def _run_analysis(path: str, output_dir: str):
 def is_port_in_use(host: str, port: int) -> bool:
     """Check if a port is in use on a specific host."""
     import socket
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex((host, port)) == 0
+
 
 @app.command()
 def web(
     host: str = typer.Option("127.0.0.1", "--host", "-h", help="Bind socket to this host."),
     port: int = typer.Option(8000, "--port", "-p", help="Bind socket to this port."),
     open_browser: bool = typer.Option(True, "--open/--no-open", help="Open the browser automatically."),
-    artifacts_dir: str = typer.Option("artifacts", "--artifacts-dir", help="Directory containing artifacts.")
+    artifacts_dir: str = typer.Option("artifacts", "--artifacts-dir", help="Directory containing artifacts."),
 ):
     """Start the Web Dashboard to view generated resumes."""
     import os
     import webbrowser
+
     import uvicorn
     from rich.console import Console
 
@@ -177,7 +189,9 @@ def web(
             break
 
     if not found_port:
-        console.print(f"[bold red]Error:[/bold red] Could not find an available port in range {original_port} to {original_port + max_tries - 1}.")
+        console.print(
+            f"[bold red]Error:[/bold red] Could not find an available port in range {original_port} to {original_port + max_tries - 1}."
+        )
         raise typer.Exit(code=1)
 
     os.environ["GITRESUME_ARTIFACTS_DIR"] = artifacts_dir
@@ -197,16 +211,19 @@ def web(
         threading.Thread(target=open_url, daemon=True).start()
 
     from gitresume_web.main import app as web_app
+
     uvicorn.run(web_app, host=host, port=port, log_level="info")
 
 
 @app.command()
 def generate(
     path: str = typer.Argument(".", help="Path to repo or artifact directory."),
-    model: Optional[str] = typer.Option(None, "--model", help="LLM model to use."),
-    prompt: Optional[str] = typer.Option(None, "--prompt", help="Custom prompt override."),
-    job_description: Optional[str] = typer.Option(None, "--jd", "--job-description", help="Job description to tailor the resume."),
-    output_dir: str = typer.Option("artifacts", "--output-dir", "-o", help="Directory to save artifacts.")
+    model: str | None = typer.Option(None, "--model", help="LLM model to use."),
+    prompt: str | None = typer.Option(None, "--prompt", help="Custom prompt override."),
+    job_description: str | None = typer.Option(
+        None, "--jd", "--job-description", help="Job description to tailor the resume."
+    ),
+    output_dir: str = typer.Option("artifacts", "--output-dir", "-o", help="Directory to save artifacts."),
 ):
     """Generate a resume from a repository analysis."""
     import asyncio
@@ -226,7 +243,7 @@ def generate(
     repo_data = None
     if (path_obj / "repo.json").exists():
         # User pointed to an artifact directory
-        manager = ArtifactManager(base_dir=path_obj.parent, run_id=path_obj.name)
+        manager = ArtifactManager(base_dir=str(path_obj.parent), run_id=path_obj.name)
         repo_data = manager.load_artifact("repo.json")
     elif (path_obj / "artifacts").exists() or path_obj.is_dir():
         # It's a repo path, let's see if we should analyze it first
@@ -244,38 +261,43 @@ def generate(
 
     with Status("[bold green]Working with LLM...", console=console):
         try:
-            resume_result = asyncio.run(generate_resume_from_data(
-                repo_data=repo_data,
-                job_description=job_description,
-                model=model,
-                prompt=prompt
-            ))
+            resume_result = asyncio.run(
+                generate_resume_from_data(
+                    repo_data=repo_data, job_description=job_description, model=model, prompt=prompt
+                )
+            )
         except Exception as e:
             console.print(f"[bold red]Generation failed:[/bold red] {e}")
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from e
 
     if not resume_result.get("success"):
         console.print(f"[bold red]Generation failed:[/bold red] {resume_result.get('error')}")
         raise typer.Exit(code=1)
 
     # 3. Save Outputs
-    resume_dir = manager.base_path / "resume"
-    resume_dir.mkdir(exist_ok=True)
+    if manager:
+        resume_dir = manager.base_path / "resume"
+        resume_dir.mkdir(exist_ok=True)
 
-    manager.save_artifact("resume/resume.json", resume_result)
-    md_content = resume_to_markdown(resume_result)
-    manager.save_artifact("resume/resume.md", md_content, type="text")
-    manager.finalize()
+        manager.save_artifact("resume/resume.json", resume_result)
+        md_content = resume_to_markdown(resume_result)
+        manager.save_artifact("resume/resume.md", md_content, type="text")
+        manager.finalize()
 
-    # 4. Summary
-    console.print("\n[bold green]Resume generated successfully![/bold green]")
-    console.print(f"[bold blue]JSON:[/bold blue] {manager.base_path / 'resume.json'}")
-    console.print(f"[bold blue]Markdown:[/bold blue] {manager.base_path / 'resume.md'}")
+        # 4. Summary
+        console.print("\n[bold green]Resume generated successfully![/bold green]")
+        console.print(f"[bold blue]JSON:[/bold blue] {manager.base_path / 'resume.json'}")
+        console.print(f"[bold blue]Markdown:[/bold blue] {manager.base_path / 'resume.md'}")
+    else:
+        # Fallback if manager is still None for some reason
+        console.print("\n[bold green]Resume generated successfully![/bold green]")
+        console.print("[yellow]Note: Artifacts were not saved to a managed directory.[/yellow]")
 
     # Print a snippet of the markdown
     console.print("\n[bold cyan]--- Resume Snippet ---[/bold cyan]")
     snippet = "\n".join(md_content.splitlines()[:15])
     console.print(snippet + "\n...")
+
 
 if __name__ == "__main__":
     app()

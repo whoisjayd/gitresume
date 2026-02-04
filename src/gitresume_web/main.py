@@ -17,10 +17,12 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 # Artifacts directory
 ARTIFACTS_DIR = os.getenv("GITRESUME_ARTIFACTS_DIR", "artifacts")
 
+
 @app.get("/", response_class=HTMLResponse)
 async def list_runs(request: Request):
     runs = ArtifactManager.list_runs(base_dir=ARTIFACTS_DIR)
     return templates.TemplateResponse("index.html", {"request": request, "runs": runs})
+
 
 @app.get("/runs/{run_id}", response_class=HTMLResponse)
 async def run_details(request: Request, run_id: str):
@@ -30,14 +32,14 @@ async def run_details(request: Request, run_id: str):
     if not manifest_path.exists():
         raise HTTPException(status_code=404, detail="Run not found")
 
-    with open(manifest_path, "r") as f:
+    with open(manifest_path) as f:
         manifest = json.load(f)
 
     # Try to load repo info if it exists
     repo_info = None
     repo_json_path = base_path / "repo.json"
     if repo_json_path.exists():
-        with open(repo_json_path, "r") as f:
+        with open(repo_json_path) as f:
             repo_info = json.load(f)
 
     # Try to load resume if it exists
@@ -46,13 +48,11 @@ async def run_details(request: Request, run_id: str):
     if resume_md_path.exists():
         resume_md = resume_md_path.read_text()
 
-    return templates.TemplateResponse("run_details.html", {
-        "request": request,
-        "run_id": run_id,
-        "manifest": manifest,
-        "repo_info": repo_info,
-        "resume_md": resume_md
-    })
+    return templates.TemplateResponse(
+        "run_details.html",
+        {"request": request, "run_id": run_id, "manifest": manifest, "repo_info": repo_info, "resume_md": resume_md},
+    )
+
 
 @app.get("/runs/{run_id}/resume", response_class=HTMLResponse)
 async def view_resume(request: Request, run_id: str):
@@ -64,8 +64,6 @@ async def view_resume(request: Request, run_id: str):
 
     resume_md = resume_md_path.read_text()
 
-    return templates.TemplateResponse("resume_view.html", {
-        "request": request,
-        "run_id": run_id,
-        "resume_md": resume_md
-    })
+    return templates.TemplateResponse(
+        "resume_view.html", {"request": request, "run_id": run_id, "resume_md": resume_md}
+    )

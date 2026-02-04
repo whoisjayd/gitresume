@@ -11,10 +11,12 @@ GitResume is a CLI tool that analyzes your local or remote repositories, extract
 
 <div align="center">
 
+[![PyPI version](https://img.shields.io/pypi/v/gitresume.svg)](https://pypi.org/project/gitresume/)
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://choosealicense.com/licenses/mit/)
+[![Build Status](https://github.com/whoisjayd/gitresume/actions/workflows/build.yml/badge.svg)](https://github.com/whoisjayd/gitresume/actions/workflows/build.yml)
+[![Docker Image Version](https://img.shields.io/docker/v/whoisjayd/gitresume?label=docker)](https://hub.docker.com/r/whoisjayd/gitresume)
 [![GitHub Issues](https://img.shields.io/github/issues/whoisjayd/gitresume)](https://github.com/whoisjayd/gitresume/issues)
-[![Contributions Welcome](https://img.shields.io/badge/Contributions-Welcome-brightgreen.svg)](https://github.com/whoisjayd/gitresume)
 
 </div>
 
@@ -35,21 +37,36 @@ GitResume is a CLI tool that analyzes your local or remote repositories, extract
 
 ### Installation
 
-We recommend using [uv](https://github.com/astral-sh/uv) for the best experience:
+Choose your preferred installation method:
 
+#### 1. Via `uv` (Recommended)
 ```bash
-# Install as a global tool
 uv tool install gitresume
+```
 
-# Or via pip
+#### 2. Via `pip`
+```bash
 pip install gitresume
 ```
+
+#### 3. Via Docker
+```bash
+docker pull whoisjayd/gitresume
+```
+
+---
+
+## 📖 Usage
 
 ### 1. Analyze a Repository
 Point GitResume at any local folder or clone a remote repo to create an analysis artifact.
 
 ```bash
+# Local
 gitresume analyze ./my-awesome-project
+
+# Docker
+docker run -v $(pwd):/app/data -e GEMINI_API_KEY=$GEMINI_API_KEY whoisjayd/gitresume analyze /app/data/my-project
 ```
 
 ### 2. Generate a Resume
@@ -70,47 +87,31 @@ gitresume web
 
 ## 🔧 Configuration
 
-GitResume uses environment variables for API keys. You can set them in your shell or use an `.env` or `env.yaml` file in your working directory.
+GitResume uses environment variables for API keys. You can set them in your shell or use an `.env` or `env.yaml` file.
+
+See the [Configuration Guide](docs/configuration.md) for a full list of environment variables.
 
 | Variable | Description |
 |----------|-------------|
 | `GEMINI_API_KEY` | Required for Gemini models (Default) |
 | `OPENAI_API_KEY` | Required for OpenAI models |
 | `ANTHROPIC_API_KEY`| Required for Claude models |
-| `GROQ_API_KEY` | Required for Groq models |
-
-**Example `env.yaml`:**
-```yaml
-GEMINI_API_KEY: "your-key-here"
-GITRESUME_MODEL: "gemini/gemini-1.5-flash"
-```
+| `GITRESUME_MODEL`| Model string (e.g., `gemini/gemini-1.5-flash`) |
 
 ---
 
 ## 🏗 CLI Reference
 
-### `gitresume analyze [PATH]`
-Analyzes the repository at the given path.
-- `--output-dir, -o`: Where to save analysis artifacts (default: `artifacts`).
-
-### `gitresume generate [PATH]`
-Generates a resume from an analysis artifact or repo path.
-- `--model`: Specific LLM model to use.
-- `--jd`: Path to a job description text file or a raw string.
-- `--prompt`: Custom prompt override for generation.
-
-### `gitresume web`
-Launches the local viewer dashboard.
-- `--port, -p`: Port to run the dashboard on (default: `8000`).
-- `--no-open`: Don't open the browser automatically.
+For detailed command usage, see the [CLI Reference](docs/installation.md#cli-reference).
 
 ---
 
 ## 📄 Documentation
 
-- [Release Process](docs/release.md)
+- [Installation & Setup](docs/installation.md)
+- [Configuration Guide](docs/configuration.md)
 - [Security & Data Handling](docs/security.md)
-- [Legacy Web App Note](docs/legacy_web.md)
+- [Release Process](docs/release.md)
 
 ---
 

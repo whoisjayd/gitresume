@@ -11,7 +11,7 @@ import logging
 import os
 import subprocess
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Any
 from urllib.parse import urlparse
 
 from github import Github, GithubException
@@ -21,7 +21,7 @@ from .gitingest import IGNORE_DIRS, IGNORE_EXTENSIONS
 logger = logging.getLogger(__name__)
 
 
-def _parse_repo_url(repo_url: str) -> Tuple[str, str, str]:
+def _parse_repo_url(repo_url: str) -> tuple[str, str, str]:
     """Parses a repository URL to extract the owner and repo name."""
     try:
         parsed_url = urlparse(repo_url)
@@ -54,7 +54,7 @@ async def _validate_git_install() -> None:
         raise FileNotFoundError("Git not found. Please install it and ensure it's in your PATH.") from e
 
 
-async def _check_github_access(repo_full_name: str, github_token: Optional[str]) -> bool:
+async def _check_github_access(repo_full_name: str, github_token: str | None) -> bool:
     """Verifies access to the GitHub repository."""
     try:
         g = Github(github_token)
@@ -73,7 +73,7 @@ async def _check_github_access(repo_full_name: str, github_token: Optional[str])
             raise PermissionError(f"Access denied for repo '{repo_full_name}'. Check token permissions.") from e
         else:
             logger.error(f"GitHub API error for '{repo_full_name}': {e}")
-            raise IOError(f"Unable to access repository via GitHub API: {e}") from e
+            raise OSError(f"Unable to access repository via GitHub API: {e}") from e
 
 
 async def _run_clone_command(clone_url: str, repo_dir: Path) -> None:
@@ -96,7 +96,7 @@ async def _run_clone_command(clone_url: str, repo_dir: Path) -> None:
     if process.returncode != 0:
         error_msg = stderr.decode().strip()
         logger.error(f"Git clone failed for '{repo_dir}'. Error: {error_msg}")
-        raise IOError(f"Git clone failed: {error_msg}")
+        raise OSError(f"Git clone failed: {error_msg}")
 
     logger.info(f"Sparse clone successful for {repo_dir}. Now checking out files...")
 
@@ -113,12 +113,12 @@ async def _run_clone_command(clone_url: str, repo_dir: Path) -> None:
     if process_checkout.returncode != 0:
         error_msg = stderr.decode().strip()
         logger.error(f"Git checkout failed for '{repo_dir}'. Error: {error_msg}")
-        raise IOError(f"Git checkout failed: {error_msg}")
+        raise OSError(f"Git checkout failed: {error_msg}")
 
     logger.info(f"Successfully cloned and checked out {repo_dir}")
 
 
-def _get_repo_stats(repo_dir: Path) -> Tuple[int, int]:
+def _get_repo_stats(repo_dir: Path) -> tuple[int, int]:
     """
     Calculates the total size and file count of the repository,
     respecting the ignore rules from gitingest.
@@ -143,7 +143,7 @@ def _get_repo_stats(repo_dir: Path) -> Tuple[int, int]:
         return 0, 0
 
 
-async def clone_repo_tool(repo_url: str, target_dir: str, github_token: Optional[str] = None) -> Dict[str, any]:
+async def clone_repo_tool(repo_url: str, target_dir: str, github_token: str | None = None) -> dict[str, Any]:
     """
     Clones a GitHub repository to a specified local directory.
 
@@ -205,7 +205,7 @@ async def clone_repo_tool(repo_url: str, target_dir: str, github_token: Optional
         logger.info(f"Clone successful: {result}")
         return result
 
-    except (ValueError, FileNotFoundError, PermissionError, IOError) as e:
+    except (OSError, ValueError, FileNotFoundError, PermissionError) as e:
         logger.error(f"Clone failed for '{repo_url}'. Reason: {e}")
         return {"success": False, "error": str(e)}
     except Exception as e:

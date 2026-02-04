@@ -1,7 +1,9 @@
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-import json
-from unittest.mock import patch, AsyncMock, MagicMock
+
 from gitresume_core.llm import UnifiedLLMClient
+
 
 @pytest.mark.asyncio
 @patch("litellm.acompletion")
@@ -18,6 +20,7 @@ async def test_generate_completion(mock_acompletion):
     assert result == "Test completion"
     mock_acompletion.assert_called_once()
 
+
 @pytest.mark.asyncio
 @patch("gitresume_core.llm.UnifiedLLMClient.generate_completion", new_callable=AsyncMock)
 async def test_generate_json_completion_direct(mock_gen):
@@ -27,6 +30,7 @@ async def test_generate_json_completion_direct(mock_gen):
     result = await client.generate_json_completion(messages=[])
 
     assert result == {"key": "value"}
+
 
 @pytest.mark.asyncio
 @patch("gitresume_core.llm.UnifiedLLMClient.generate_completion", new_callable=AsyncMock)
@@ -39,6 +43,7 @@ async def test_generate_json_completion_fallback(mock_gen):
 
     assert result == {"key": "fallback"}
 
+
 @pytest.mark.asyncio
 @patch("litellm.acompletion")
 async def test_generate_completion_error(mock_acompletion):
@@ -47,6 +52,7 @@ async def test_generate_completion_error(mock_acompletion):
     client = UnifiedLLMClient()
     with pytest.raises(Exception, match="API Error"):
         await client.generate_completion(messages=[])
+
 
 @pytest.mark.asyncio
 @patch("gitresume_core.llm.UnifiedLLMClient.generate_completion", new_callable=AsyncMock)

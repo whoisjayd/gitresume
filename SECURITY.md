@@ -6,7 +6,13 @@ GitResume takes the security of your code and API keys seriously. For detailed i
 
 If you discover a security vulnerability, please do the following:
 
-- Do **not** open a public issue.
-- Email the maintainer at [GitHub](https://github.com/whoisjayd) with details.
-- I will respond as soon as possible and coordinate a fix.
-- If the vulnerability is confirmed, I will release a patch and notify users.
+- **Do not** open a public issue.
+- Report the vulnerability via [GitHub Security Advisories](https://github.com/whoisjayd/gitresume/security/advisories/new) or email the maintainer at `contactjaydeepsolanki@gmail.com`.
+- We will respond within 48 hours and coordinate a fix.
+- If the vulnerability is confirmed, we will release a patch and notify users.
+
+## API Key Handling
+
+- GitResume never stores your API keys on its own servers (it has none).
+- Keys are only used to authenticate with your chosen LLM provider.
+- We implement automated redaction to ensure keys do not appear in application logs.

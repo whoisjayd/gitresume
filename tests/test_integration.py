@@ -1,10 +1,11 @@
-import pytest
-import json
+from unittest.mock import patch
+
 from typer.testing import CliRunner
+
 from gitresume_cli.main import app
-from unittest.mock import patch, MagicMock
 
 runner = CliRunner()
+
 
 @patch("gitresume_core.gitingest.gitingest_tool")
 @patch("gitresume_core.create_resume.generate_resume_from_data")
@@ -21,10 +22,10 @@ def test_full_flow_analyze_then_generate(mock_generate, mock_gitingest, temp_art
                 "total_files_processed": 5,
                 "total_size_bytes": 500,
                 "file_types": {".py": 5},
-                "code_metrics": {"total_functions": 1, "total_classes": 0}
+                "code_metrics": {"total_functions": 1, "total_classes": 0},
             },
             "tree": "root/\n  main.py",
-            "content": {"main.py": "def test(): pass"}
+            "content": {"main.py": "def test(): pass"},
         }
 
     mock_gitingest.side_effect = mock_gitingest_func
@@ -59,7 +60,7 @@ def test_full_flow_analyze_then_generate(mock_generate, mock_gitingest, temp_art
             "tech_stack": ["Python", "Pytest"],
             "bullet_points": ["Integrated test point"],
             "future_plans": "Continuous Integration",
-            "interview_questions": ["How did you test this?"]
+            "interview_questions": ["How did you test this?"],
         }
 
     mock_generate.side_effect = mock_generate_func

@@ -4,7 +4,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from gitresume_core.version import get_tool_version
 
@@ -12,28 +12,24 @@ from gitresume_core.version import get_tool_version
 class ArtifactManager:
     """Manages the lifecycle of run artifacts."""
 
-    def __init__(self, base_dir: str = "artifacts", run_id: Optional[str] = None):
+    def __init__(self, base_dir: str = "artifacts", run_id: str | None = None):
         self.run_id = run_id or datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_") + str(uuid.uuid4())[:8]
         self.base_path = Path(base_dir) / self.run_id
         self.logs_path = self.base_path / "logs"
         self.manifest_path = self.base_path / "manifest.json"
         self.start_time = time.time()
 
-        self.manifest_data = {
+        self.manifest_data: dict[str, Any] = {
             "schema_version": "1.0",
             "tool_version": get_tool_version(),
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "run_id": self.run_id,
             "inputs": {},
             "outputs": [],
-            "stats": {
-                "duration_seconds": 0,
-                "file_counts": {},
-                "token_usage": {}
-            }
+            "stats": {"duration_seconds": 0, "file_counts": {}, "token_usage": {}},
         }
 
-    def initialize(self, inputs: Dict[str, Any]):
+    def initialize(self, inputs: dict[str, Any]):
         """Initializes the artifact directory and manifest."""
         self.base_path.mkdir(parents=True, exist_ok=True)
         self.logs_path.mkdir(parents=True, exist_ok=True)
@@ -51,28 +47,29 @@ class ArtifactManager:
         if type == "json":
             content = json.dumps(data, indent=2)
             file_path.write_text(content)
+        elif isinstance(data, str):
+            content = data
+            file_path.write_text(content)
         else:
-            if isinstance(data, str):
-                content = data
-                file_path.write_text(content)
-            else:
-                content = data
-                file_path.write_bytes(content)
+            content = data
+            file_path.write_bytes(content)
 
         # Calculate hash
         sha256_hash = hashlib.sha256(content if isinstance(content, bytes) else content.encode()).hexdigest()
 
         # Update manifest
-        self.manifest_data["outputs"].append({
-            "name": name,
-            "path": str(file_path.relative_to(self.base_path)),
-            "sha256": sha256_hash,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        })
+        self.manifest_data["outputs"].append(
+            {
+                "name": name,
+                "path": str(file_path.relative_to(self.base_path)),
+                "sha256": sha256_hash,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
         self._write_manifest()
         return file_path
 
-    def update_stats(self, stats: Dict[str, Any]):
+    def update_stats(self, stats: dict[str, Any]):
         """Updates the stats in the manifest."""
         self.manifest_data["stats"].update(stats)
         self._write_manifest()
@@ -84,7 +81,7 @@ class ArtifactManager:
             raise FileNotFoundError(f"Artifact '{name}' not found in {self.base_path}")
 
         if file_path.suffix == ".json":
-            with open(file_path, "r") as f:
+            with open(file_path) as f:
                 return json.load(f)
         return file_path.read_text()
 
@@ -99,7 +96,7 @@ class ArtifactManager:
             json.dump(self.manifest_data, f, indent=2)
 
     @staticmethod
-    def list_runs(base_dir: str = "artifacts") -> List[Dict[str, Any]]:
+    def list_runs(base_dir: str = "artifacts") -> list[dict[str, Any]]:
         """Lists all runs in the artifacts directory."""
         base_path = Path(base_dir)
         if not base_path.exists():
@@ -108,10 +105,10 @@ class ArtifactManager:
         runs = []
         for manifest_file in base_path.glob("*/manifest.json"):
             try:
-                with open(manifest_file, "r") as f:
+                with open(manifest_file) as f:
                     data = json.load(f)
                     runs.append(data)
-            except (json.JSONDecodeError, IOError):
+            except (OSError, json.JSONDecodeError):
                 continue
 
         # Sort by timestamp descending

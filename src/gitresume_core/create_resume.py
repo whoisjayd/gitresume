@@ -9,7 +9,7 @@ refining the output with grammar correction.
 import logging
 import os
 import re
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import WebSocket
 from starlette.websockets import WebSocketState
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 PRIMARY_MODEL = os.getenv("AI_MODEL", "gemini/gemini-2.0-flash-lite")
 
 
-async def _emit_ws_message(websocket: Optional[WebSocket], msg_type: str, content: Any, generation_id: str):
+async def _emit_ws_message(websocket: WebSocket | None, msg_type: str, content: Any, generation_id: str):
     """Safely sends a message over a WebSocket connection."""
     if not websocket or websocket.client_state != WebSocketState.CONNECTED:
         return
@@ -42,7 +42,7 @@ def _build_prompt(
     gitingest_summary: str,
     gitingest_tree: str,
     gitingest_content: str,
-    job_description: Optional[str],
+    job_description: str | None,
 ) -> str:
     """Constructs the final prompt for the AI model."""
     job_desc_text = (
@@ -56,7 +56,7 @@ def _build_prompt(
     )
 
 
-def resume_to_markdown(data: Dict[str, Any]) -> str:
+def resume_to_markdown(data: dict[str, Any]) -> str:
     """Converts resume data dictionary to a Markdown string."""
     md = f"# {data.get('project_title', 'Project')}\n\n"
 
@@ -83,14 +83,12 @@ def resume_to_markdown(data: Dict[str, Any]) -> str:
     return md
 
 
-async def _generate_and_parse_response(prompt: str, model: Optional[str] = None) -> Dict[str, Any]:
+async def _generate_and_parse_response(prompt: str, model: str | None = None) -> dict[str, Any]:
     """Calls the AI model and parses the JSON response."""
     try:
         messages = [{"role": "user", "content": prompt}]
         return await llm_client.generate_json_completion(
-            messages=messages,
-            model=model or PRIMARY_MODEL,
-            temperature=0.1
+            messages=messages, model=model or PRIMARY_MODEL, temperature=0.1
         )
     except Exception as e:
         logger.error(f"Failed to generate or parse AI response: {e}")
@@ -102,12 +100,12 @@ async def create_resume_tool(
     gitingest_tree: str,
     gitingest_content: str,
     generation_id: str,
-    project_name: Optional[str] = None,
-    job_description: Optional[str] = None,
-    websocket: Optional[WebSocket] = None,
-    model: Optional[str] = None,
-    custom_prompt: Optional[str] = None,
-) -> Dict[str, Any]:
+    project_name: str | None = None,
+    job_description: str | None = None,
+    websocket: WebSocket | None = None,
+    model: str | None = None,
+    custom_prompt: str | None = None,
+) -> dict[str, Any]:
     """
     Main tool to generate a resume section from repository analysis.
 
@@ -174,11 +172,11 @@ async def create_resume_tool(
 
 
 async def generate_resume_from_data(
-    repo_data: Dict[str, Any],
-    job_description: Optional[str] = None,
-    model: Optional[str] = None,
-    prompt: Optional[str] = None,
-) -> Dict[str, Any]:
+    repo_data: dict[str, Any],
+    job_description: str | None = None,
+    model: str | None = None,
+    prompt: str | None = None,
+) -> dict[str, Any]:
     """Convenience wrapper for generate_resume_tool when you already have repo data."""
     return await create_resume_tool(
         gitingest_summary=repo_data.get("summary", ""),
@@ -188,5 +186,5 @@ async def generate_resume_from_data(
         project_name=repo_data.get("project_name"),
         job_description=job_description,
         model=model,
-        custom_prompt=prompt
+        custom_prompt=prompt,
     )

@@ -17,7 +17,8 @@ def build():
     # Define arguments for PyInstaller
     args = [
         str(entry_point),
-        "--name", "gitresume",
+        "--name",
+        "gitresume",
         "--onefile",
         "--clean",
         f"--paths={root / 'src'}",
@@ -39,6 +40,7 @@ def build():
     print(f"Including templates from {templates_dir}")
 
     PyInstaller.__main__.run(args)
+
 
 if __name__ == "__main__":
     build()

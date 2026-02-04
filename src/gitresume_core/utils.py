@@ -66,6 +66,7 @@ def robust_rmtree(path: str, max_retries: int = 3, delay_secs: float = 1.0) -> N
         try:
             # Use onexc for Python 3.12+, fallback to onerror for older versions
             import sys
+
             if sys.version_info >= (3, 12):
                 shutil.rmtree(path_obj, onexc=_remove_readonly)
             else:
@@ -85,4 +86,4 @@ def robust_rmtree(path: str, max_retries: int = 3, delay_secs: float = 1.0) -> N
     logger.error(f"Failed to remove directory '{path}' after {max_retries} attempts.")
     # As a last resort, if the directory still exists, raise an error.
     if path_obj.exists():
-        raise IOError(f"Could not remove directory: {path}")
+        raise OSError(f"Could not remove directory: {path}")

@@ -6,14 +6,14 @@ import asyncio
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional, Set
+from typing import Any
 
 import aiofiles
 
 logger = logging.getLogger(__name__)
 
 
-IGNORE_DIRS: Set[str] = {
+IGNORE_DIRS: set[str] = {
     # Build outputs and temporary directories
     "build",
     "dist",
@@ -95,7 +95,6 @@ IGNORE_DIRS: Set[str] = {
     "pkg",
     # C/C++
     "CMakeFiles",
-    "build",
     "Debug",
     "Release",
     "x64",
@@ -104,12 +103,7 @@ IGNORE_DIRS: Set[str] = {
     "_deps",
     ".conan",
     ".hunter",
-    "out",
-    "bin",
-    "obj",
     # C# / .NET
-    "bin",
-    "obj",
     "packages",
     "TestResults",
     "BenchmarkDotNet.Artifacts",
@@ -119,7 +113,6 @@ IGNORE_DIRS: Set[str] = {
     ".azure",
     ".deployment",
     # Java / JVM
-    "target",
     ".gradle",
     ".m2",
     ".ivy2",
@@ -143,14 +136,12 @@ IGNORE_DIRS: Set[str] = {
     ".ruby-gemset",
     "tmp/cache",
     # PHP
-    "vendor",
     ".phpunit.cache",
     ".php_cs.cache",
     ".psalm",
     ".phpstan",
     # Swift / iOS
     "DerivedData",
-    ".build",
     "Pods",
     "Carthage",
     "*.xcworkspace",
@@ -161,9 +152,7 @@ IGNORE_DIRS: Set[str] = {
     "fastlane/screenshots",
     "fastlane/test_output",
     # Android
-    ".gradle",
     "app/build",
-    ".idea",
     "local.properties",
     "proguard",
     "captures",
@@ -176,10 +165,8 @@ IGNORE_DIRS: Set[str] = {
     ".packages",
     "pubspec.lock",
     # Rust
-    "target",
     ".cargo",
     # Elixir / Erlang
-    "_build",
     "deps",
     ".mix",
     "priv/static",
@@ -189,17 +176,13 @@ IGNORE_DIRS: Set[str] = {
     ".cpcache",
     "resources/public/js",
     # Haskell
-    "dist",
     "dist-newstyle",
     ".stack-work",
     ".cabal-sandbox",
     # OCaml
-    "_build",
     "_opam",
     ".merlin",
     # F#
-    "bin",
-    "obj",
     "paket-files",
     # R
     ".Rproj.user",
@@ -235,8 +218,6 @@ IGNORE_DIRS: Set[str] = {
     ".dub",
     # Scala
     ".bsp",
-    ".metals",
-    ".bloop",
     # Kotlin
     ".kotlin",
     # Documentation
@@ -304,7 +285,7 @@ IGNORE_DIRS: Set[str] = {
     ".apdisk",
 }
 
-IGNORE_EXTENSIONS: Set[str] = {
+IGNORE_EXTENSIONS: set[str] = {
     # Compiled / Binary
     ".pyc",
     ".pyo",
@@ -380,7 +361,6 @@ IGNORE_EXTENSIONS: Set[str] = {
     ".myi",
     # Logs
     ".log",
-    ".out",
     ".err",
     ".crash",
     ".dump",
@@ -482,7 +462,6 @@ IGNORE_EXTENSIONS: Set[str] = {
     # Cache files
     ".cache",
     ".pid",
-    ".lock",
     ".lck",
     ".sem",
     ".dsym",
@@ -524,7 +503,6 @@ IGNORE_EXTENSIONS: Set[str] = {
     ".meta",
     ".fbx",
     ".blend",
-    ".obj",
     ".dae",
     # CAD files
     ".dwg",
@@ -561,7 +539,6 @@ IGNORE_EXTENSIONS: Set[str] = {
     ".gitmodules",
     ".gitattributes",
     # Profiling and debugging
-    ".prof",
     ".profdata",
     ".gcov",
     ".gcda",
@@ -584,7 +561,7 @@ IGNORE_EXTENSIONS: Set[str] = {
 
 MAX_FILES_TO_PROCESS: int = 5000
 MAX_FILE_SIZE_BYTES: int = 1 * 1024 * 1024
-TEXT_FILE_EXTENSIONS: Set[str] = {
+TEXT_FILE_EXTENSIONS: set[str] = {
     ".json",
     ".yaml",
     ".yml",
@@ -598,8 +575,8 @@ TEXT_FILE_EXTENSIONS: Set[str] = {
 }
 
 # --- Tree-sitter Initialization ---
-PARSER: Optional[Any] = None
-LANGUAGE_MAP: Dict[str, Any] = {}
+PARSER: Any | None = None
+LANGUAGE_MAP: dict[str, Any] = {}
 try:
     from tree_sitter import Language, Parser
 
@@ -622,8 +599,8 @@ try:
     try:
         from tree_sitter_typescript import language_tsx, language_typescript
 
-        language_loaders[".ts"] = lambda: language_typescript()
-        language_loaders[".tsx"] = lambda: language_tsx()
+        language_loaders[".ts"] = language_typescript
+        language_loaders[".tsx"] = language_tsx
     except (ImportError, AttributeError):
         logger.warning("tree-sitter-typescript not found or invalid. TypeScript analysis disabled.")
 
@@ -649,7 +626,7 @@ except Exception as e:
     logger.error(f"An unexpected error during tree-sitter initialization: {e}")
 
 
-def _extract_ast_metrics(tree: Any, lang: Any) -> Dict[str, Any]:
+def _extract_ast_metrics(tree: Any, lang: Any) -> dict[str, Any]:
     """Extracts metrics like function and class counts using language-specific queries."""
     if not tree or not lang:
         return {}
@@ -700,6 +677,7 @@ def _extract_ast_metrics(tree: Any, lang: Any) -> Dict[str, Any]:
             return 0
         try:
             from tree_sitter import Query
+
             query = Query(lang, query_str)
             return len(query.captures(tree.root_node))
         except Exception:
@@ -711,7 +689,7 @@ def _extract_ast_metrics(tree: Any, lang: Any) -> Dict[str, Any]:
     }
 
 
-async def _process_file(file_path: Path, repo_root: Path) -> Optional[Dict[str, Any]]:
+async def _process_file(file_path: Path, repo_root: Path) -> dict[str, Any] | None:
     try:
 
         def get_size():
@@ -731,7 +709,7 @@ async def _process_file(file_path: Path, repo_root: Path) -> Optional[Dict[str, 
             "metrics": {},
         }
 
-        async with aiofiles.open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        async with aiofiles.open(file_path, encoding="utf-8", errors="ignore") as f:
             content = await f.read()
         file_info["content_preview"] = content[:2000]
 
@@ -752,7 +730,7 @@ async def _process_file(file_path: Path, repo_root: Path) -> Optional[Dict[str, 
         return None
 
 
-async def gitingest_tool(repo_path: str) -> Dict[str, Any]:
+async def gitingest_tool(repo_path: str) -> dict[str, Any]:
     repo_root = Path(repo_path).resolve()
     if not (repo_root.exists() and repo_root.is_dir() and (repo_root / ".git").exists()):
         return {
@@ -787,7 +765,7 @@ async def gitingest_tool(repo_path: str) -> Dict[str, Any]:
         tasks.append(_process_file(file_path, repo_root))
     processed_files_info = await asyncio.gather(*tasks)
 
-    summary = {
+    summary: dict[str, Any] = {
         "total_files_processed": 0,
         "total_size_bytes": 0,
         "file_types": {},

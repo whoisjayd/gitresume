@@ -16,4 +16,9 @@ build/
 *.spec
 artifacts/
 temp_artifacts/
+.mypy_cache/
+.ruff_cache/
 node_modules/
+.serena
+.pytest_cache/
+.ipynb_checkpoints/

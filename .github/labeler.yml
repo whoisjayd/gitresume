@@ -36,6 +36,6 @@ ci:
   - changed-files:
     - any-glob-to-any-file: ['.github/**', 'scripts/**']
 
-test:
+"area:test":
   - changed-files:
     - any-glob-to-any-file: 'tests/**'

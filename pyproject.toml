@@ -11,6 +11,20 @@ version = "0.1.0"
 description = "Generate professional resumes from your GitHub repositories."
 readme = "README.md"
 requires-python = ">=3.10"
+authors = [
+    { name = "Jaydeep Solanki", email = "contactjaydeepsolanki@gmail.com" },
+]
+license = { text = "MIT" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Intended Audience :: Developers",
+]
 dependencies = [
     "fastapi>=0.128.0",
     "jinja2>=3.1.6",
@@ -39,11 +53,22 @@ line-length = 120
 target-version = "py310"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "W"]
-ignore = ["E402", "E501"] # Allow imports not at top of file and long lines for legacy compatibility
+select = ["E", "F", "I", "W", "B", "UP", "PL"]
+ignore = [
+    "E402",   # Allow imports not at top of file
+    "E501",   # Allow long lines
+    "PLR2004", # Allow magic values (common in tests/CLI)
+    "PLC0415", # Allow lazy imports (speeds up CLI startup)
+    "PLR0913", # Allow many arguments (common in tool/entry functions)
+]
 
 [project.scripts]
 gitresume = "gitresume_cli.main:app"
+
+[project.urls]
+Homepage = "https://github.com/WhoIsJayD/gitresume"
+Repository = "https://github.com/WhoIsJayD/gitresume"
+Issues = "https://github.com/WhoIsJayD/gitresume/issues"
 
 [dependency-groups]
 dev = [
@@ -52,6 +77,9 @@ dev = [
     "pytest-cov>=4.1.0",
     "pytest-asyncio>=0.23.0",
     "ruff>=0.9.4",
+    "mypy>=1.11.0",
+    "types-aiofiles>=24.1.0.20240626",
+    "pre-commit>=4.1.0",
 ]
 
 [tool.pytest.ini_options]
