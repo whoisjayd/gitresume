@@ -1,6 +1,6 @@
 import subprocess
 
-__version__ = "0.1.1"
+__version__ = "0.0.1"
 
 
 def get_git_sha() -> str:

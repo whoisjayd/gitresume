@@ -6,7 +6,7 @@ import asyncio
 import logging
 import os
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
 import aiofiles
 
@@ -672,14 +672,15 @@ def _extract_ast_metrics(tree: Any, lang: Any) -> dict[str, Any]:
     lang_name = lang.name
     lang_queries = queries.get(lang_name, {})
 
-    def count_captures(query_str):
+    def count_captures(query_str: str | None) -> int:
         if not query_str:
             return 0
         try:
             from tree_sitter import Query
 
             query = Query(lang, query_str)
-            return len(query.captures(tree.root_node))
+            captures = cast(Any, query).captures(tree.root_node)
+            return len(captures)
         except Exception:
             return 0
 
@@ -689,10 +690,18 @@ def _extract_ast_metrics(tree: Any, lang: Any) -> dict[str, Any]:
     }
 
 
-async def _process_file(file_path: Path, repo_root: Path) -> dict[str, Any] | None:
+class FileInfo(TypedDict):
+    path: str
+    size: int
+    extension: str
+    content_preview: str
+    metrics: dict[str, int]
+
+
+async def _process_file(file_path: Path, repo_root: Path) -> FileInfo | None:
     try:
 
-        def get_size():
+        def get_size() -> int:
             return file_path.stat().st_size
 
         file_size = await asyncio.to_thread(get_size)
@@ -701,7 +710,7 @@ async def _process_file(file_path: Path, repo_root: Path) -> dict[str, Any] | No
             return None
 
         rel_path_str = file_path.relative_to(repo_root).as_posix()
-        file_info = {
+        file_info: FileInfo = {
             "path": rel_path_str,
             "size": file_size,
             "extension": file_path.suffix.lower(),
@@ -716,7 +725,7 @@ async def _process_file(file_path: Path, repo_root: Path) -> dict[str, Any] | No
         if PARSER and file_info["extension"] in LANGUAGE_MAP:
             parser_lang = LANGUAGE_MAP[file_info["extension"]]
 
-            def parse_sync():
+            def parse_sync() -> Any:
                 PARSER.language = parser_lang
                 return PARSER.parse(bytes(content, "utf8"))
 
@@ -782,7 +791,7 @@ async def gitingest_tool(repo_path: str) -> dict[str, Any]:
 
     for file_path in file_paths_to_process:
         tasks.append(_process_file(file_path, repo_root))
-    processed_files_info = await asyncio.gather(*tasks)
+    processed_files_info = cast(list[FileInfo | None], await asyncio.gather(*tasks))
 
     # Initialize with strict types for MyPy
     code_metrics: CodeMetrics = {
