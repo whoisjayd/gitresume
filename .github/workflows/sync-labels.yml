@@ -10,6 +10,9 @@ on:
 
 jobs:
   labeler:
+    permissions:
+      issues: write
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
