@@ -11,7 +11,7 @@ import logging
 import os
 import subprocess
 from pathlib import Path
-from typing import Dict, Tuple, Optional
+from typing import Dict, Optional, Tuple
 from urllib.parse import urlparse
 
 from github import Github, GithubException
@@ -25,7 +25,7 @@ def _parse_repo_url(repo_url: str) -> Tuple[str, str, str]:
     """Parses a repository URL to extract the owner and repo name."""
     try:
         parsed_url = urlparse(repo_url)
-        path_parts = parsed_url.path.strip('/').replace('.git', '').split('/')
+        path_parts = parsed_url.path.strip("/").replace(".git", "").split("/")
         if len(path_parts) < 2:
             raise ValueError("URL path does not contain owner/repo.")
         owner, repo_name = path_parts[:2]
@@ -39,9 +39,10 @@ async def _validate_git_install() -> None:
     """Checks if Git is installed and accessible."""
     try:
         process = await asyncio.create_subprocess_exec(
-            'git', '--version',
+            "git",
+            "--version",
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.PIPE,
         )
         stdout, stderr = await process.communicate()
         if process.returncode == 0:
@@ -78,18 +79,18 @@ async def _check_github_access(repo_full_name: str, github_token: Optional[str])
 async def _run_clone_command(clone_url: str, repo_dir: Path) -> None:
     """Executes the git clone command in a subprocess."""
     args = [
-        'git', 'clone',
-        '--depth', '1',  # Fetch only the latest commit
-        '--filter=blob:none',  # Exclude file content initially
-        '--no-checkout',  # Don't checkout files yet
-        '--single-branch',
+        "git",
+        "clone",
+        "--depth",
+        "1",  # Fetch only the latest commit
+        "--filter=blob:none",  # Exclude file content initially
+        "--no-checkout",  # Don't checkout files yet
+        "--single-branch",
         clone_url,
-        str(repo_dir)
+        str(repo_dir),
     ]
     logger.info(f"Executing git clone for {repo_dir}...")
-    process = await asyncio.create_subprocess_exec(
-        *args, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-    )
+    process = await asyncio.create_subprocess_exec(*args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     stdout, stderr = await process.communicate()
 
     if process.returncode != 0:
@@ -101,8 +102,12 @@ async def _run_clone_command(clone_url: str, repo_dir: Path) -> None:
 
     # Now checkout the files
     process_checkout = await asyncio.create_subprocess_exec(
-        'git', '-C', str(repo_dir), 'checkout',
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        "git",
+        "-C",
+        str(repo_dir),
+        "checkout",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
     stdout, stderr = await process_checkout.communicate()
     if process_checkout.returncode != 0:
@@ -138,11 +143,7 @@ def _get_repo_stats(repo_dir: Path) -> Tuple[int, int]:
         return 0, 0
 
 
-async def clone_repo_tool(
-        repo_url: str,
-        target_dir: str,
-        github_token: Optional[str] = None
-) -> Dict[str, any]:
+async def clone_repo_tool(repo_url: str, target_dir: str, github_token: Optional[str] = None) -> Dict[str, any]:
     """
     Clones a GitHub repository to a specified local directory.
 
@@ -208,5 +209,8 @@ async def clone_repo_tool(
         logger.error(f"Clone failed for '{repo_url}'. Reason: {e}")
         return {"success": False, "error": str(e)}
     except Exception as e:
-        logger.critical(f"An unexpected error occurred during clone of '{repo_url}': {e}", exc_info=True)
+        logger.critical(
+            f"An unexpected error occurred during clone of '{repo_url}': {e}",
+            exc_info=True,
+        )
         return {"success": False, "error": f"An unexpected error occurred: {e}"}

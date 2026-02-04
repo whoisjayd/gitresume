@@ -9,17 +9,18 @@ LOG_LEVEL = logging.INFO if ENV == "production" else logging.DEBUG
 
 logging.basicConfig(
     level=LOG_LEVEL,
-    format='%(asctime)s %(levelname)s %(name)s %(message)s',
-    handlers=[logging.StreamHandler()]
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    handlers=[logging.StreamHandler()],
 )
 
-load_dotenv(dotenv_path=Path(__file__).parent / '.env', override=True)
+load_dotenv(dotenv_path=Path(__file__).parent / ".env", override=True)
 """
 FastAPI application to generate professional resumes from GitHub repositories using AI.
 Optimized for production with modular design, robust logging, and efficient session management.
 """
 
 import asyncio
+import ipaddress
 import json
 import os
 import platform
@@ -31,28 +32,34 @@ from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 import httpx
 import redis
-import ipaddress
 from api_analytics.fastapi import Analytics
-from fastapi import FastAPI, Request, Form, WebSocket, WebSocketDisconnect, HTTPException, Query
-from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, Response
+from fastapi import (
+    FastAPI,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from github import Github, GithubException
 from pydantic import BaseModel, field_validator
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from starlette.websockets import WebSocketState
 
-from tools import gitingest_tool, clone_repo_tool, create_resume_tool
+from tools import clone_repo_tool, create_resume_tool, gitingest_tool
 from tools.gitingest import IGNORE_DIRS, IGNORE_EXTENSIONS
 from tools.utils import robust_rmtree
 
@@ -64,6 +71,7 @@ ANALYTICS_TOTAL_FILES_KEY = "analytics:total_files_analyzed"
 ANALYTICS_MAX_REPO_SIZE_KEY = "analytics:max_repo_size_mb"
 ANALYTICS_MAX_FILES_KEY = "analytics:max_files_in_repo"
 
+
 async def increment_analytics_counter(key: str, unique_value: str = None):
     if not redis_client:
         return
@@ -72,6 +80,7 @@ async def increment_analytics_counter(key: str, unique_value: str = None):
         await asyncio.to_thread(redis_client.sadd, key, unique_value)
     else:
         await asyncio.to_thread(redis_client.incr, key)
+
 
 async def increment_repo_size_and_files(size_mb: float, file_count: int):
     if not redis_client:
@@ -87,11 +96,18 @@ async def increment_repo_size_and_files(size_mb: float, file_count: int):
     if not current_max_files or int(file_count) > int(current_max_files):
         await asyncio.to_thread(redis_client.set, ANALYTICS_MAX_FILES_KEY, file_count)
 
+
 async def get_analytics():
     if not redis_client:
         return {
-            "total_users": None, "total_repos_analyzed": None, "total_repo_size_mb": None, "total_files_analyzed": None,
-            "avg_repo_size_mb": None, "avg_files_per_repo": None, "max_repo_size_mb": None, "max_files_in_repo": None
+            "total_users": None,
+            "total_repos_analyzed": None,
+            "total_repo_size_mb": None,
+            "total_files_analyzed": None,
+            "avg_repo_size_mb": None,
+            "avg_files_per_repo": None,
+            "max_repo_size_mb": None,
+            "max_files_in_repo": None,
         }
     total_users = await asyncio.to_thread(redis_client.scard, ANALYTICS_TOTAL_USERS_KEY)
     total_repos = await asyncio.to_thread(redis_client.get, ANALYTICS_TOTAL_REPOS_KEY)
@@ -112,8 +128,9 @@ async def get_analytics():
         "avg_repo_size_mb": avg_repo_size,
         "avg_files_per_repo": avg_files,
         "max_repo_size_mb": float(max_repo_size) if max_repo_size else 0.0,
-        "max_files_in_repo": int(max_files) if max_files else 0
+        "max_files_in_repo": int(max_files) if max_files else 0,
     }
+
 
 # Configuration
 ENV = os.getenv("ENVIRONMENT", "development").lower()
@@ -128,13 +145,29 @@ CLOUDFLARE_ONLY = os.getenv("CLOUDFLARE_ONLY", "false").lower() == "true"
 # Cloudflare IP ranges for middleware
 CLOUDFLARE_IP_RANGES = [
     # IPv4
-    "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22",
-    "141.101.64.0/18", "108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20",
-    "197.234.240.0/22", "198.41.128.0/17", "162.158.0.0/15", "104.16.0.0/13",
-    "104.24.0.0/14", "172.64.0.0/13", "131.0.72.0/22",
+    "173.245.48.0/20",
+    "103.21.244.0/22",
+    "103.22.200.0/22",
+    "103.31.4.0/22",
+    "141.101.64.0/18",
+    "108.162.192.0/18",
+    "190.93.240.0/20",
+    "188.114.96.0/20",
+    "197.234.240.0/22",
+    "198.41.128.0/17",
+    "162.158.0.0/15",
+    "104.16.0.0/13",
+    "104.24.0.0/14",
+    "172.64.0.0/13",
+    "131.0.72.0/22",
     # IPv6
-    "2400:cb00::/32", "2606:4700::/32", "2803:f800::/32", "2405:b500::/32",
-    "2405:8100::/32", "2a06:98c0::/29", "2c0f:f248::/32"
+    "2400:cb00::/32",
+    "2606:4700::/32",
+    "2803:f800::/32",
+    "2405:b500::/32",
+    "2405:8100::/32",
+    "2a06:98c0::/29",
+    "2c0f:f248::/32",
 ]
 CLOUDFLARE_NETWORKS = [ipaddress.ip_network(cidr) for cidr in CLOUDFLARE_IP_RANGES]
 
@@ -156,14 +189,18 @@ def get_redis_client() -> Optional[redis.Redis]:
             socket_timeout=5,
             retry_on_timeout=True,
             health_check_interval=30,
-            max_connections=20
+            max_connections=20,
         )
         client.ping()
         logging.info({"message": "Redis connection established successfully"})
         return client
     except Exception as e:
         logging.warning(
-            {"message": "Redis connection failed, falling back to memory-based rate limiting", "error": str(e)})
+            {
+                "message": "Redis connection failed, falling back to memory-based rate limiting",
+                "error": str(e),
+            }
+        )
         return None
 
 
@@ -174,7 +211,7 @@ def validate_github_url(url: str) -> bool:
     """Validate if the provided URL is a valid GitHub repository URL."""
     if not url or not isinstance(url, str) or re.search(r'[<>"\'`]', url):
         return False
-    pattern = r'^https://github\.com/[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+/?$'
+    pattern = r"^https://github\.com/[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+/?$"
     return bool(re.match(pattern, url))
 
 
@@ -182,7 +219,7 @@ def validate_github_token(token: str) -> bool:
     """Validate if the provided GitHub token is in a valid format."""
     if not token or not isinstance(token, str):
         return False
-    pattern = r'^[a-zA-Z0-9_]+$'
+    pattern = r"^[a-zA-Z0-9_]+$"
     return bool(re.match(pattern, token)) and len(token) >= 20
 
 
@@ -190,7 +227,7 @@ def sanitize_input(text: str, max_length: int = 1000) -> str:
     """Sanitize input string by removing dangerous characters and enforcing length limit."""
     if not text or not isinstance(text, str):
         return ""
-    return re.sub(r'[<>"\'`]', '', text.strip())[:max_length]
+    return re.sub(r'[<>"\'`]', "", text.strip())[:max_length]
 
 
 # Set Windows event loop policy if applicable
@@ -201,6 +238,7 @@ if platform.system() == "Windows":
 
 class GitHubSessionData(BaseModel):
     """Pydantic model for session data."""
+
     user_id: str
     access_token: Optional[str] = None
     github_token: Optional[str] = None
@@ -213,19 +251,19 @@ class GitHubSessionData(BaseModel):
     result: Optional[Dict[str, Any]] = None
     status: Optional[str] = None
 
-    @field_validator('repo_url')
+    @field_validator("repo_url")
     def validate_repo_url(cls, v):
         if v and not validate_github_url(v):
-            raise ValueError('Invalid GitHub repository URL')
+            raise ValueError("Invalid GitHub repository URL")
         return v
 
-    @field_validator('github_token')
+    @field_validator("github_token")
     def validate_github_token_field(cls, v):
         if v and not validate_github_token(v):
-            raise ValueError('Invalid GitHub token format')
+            raise ValueError("Invalid GitHub token format")
         return v
 
-    @field_validator('job_description')
+    @field_validator("job_description")
     def validate_job_description(cls, v):
         if v:
             return sanitize_input(v, max_length=5000)
@@ -242,7 +280,7 @@ async def save_session(session: GitHubSessionData):
         redis_client.setex,
         f"session:{session.session_id}",
         SESSION_EXPIRY_SECONDS,
-        session.model_dump_json()
+        session.model_dump_json(),
     )
 
 
@@ -256,7 +294,13 @@ async def get_session(session_id: str) -> Optional[GitHubSessionData]:
     try:
         return GitHubSessionData(**json.loads(data))
     except Exception as e:
-        logging.warning({"message": "Invalid session data in Redis", "session_id": session_id, "error": str(e)})
+        logging.warning(
+            {
+                "message": "Invalid session data in Redis",
+                "session_id": session_id,
+                "error": str(e),
+            }
+        )
         return None
 
 
@@ -274,7 +318,7 @@ def set_session_cookie(response, session_id: str):
         max_age=SESSION_EXPIRY_SECONDS,
         httponly=True,
         secure=ENV == "production",
-        samesite="Lax"
+        samesite="Lax",
     )
 
 
@@ -298,7 +342,12 @@ async def get_cached_repository_validation(repo_url: str, github_token: str = No
         stale_keys = [k for k, (_, timestamp) in repository_cache.items() if timestamp < cutoff_time]
         for k in stale_keys:
             repository_cache.pop(k, None)
-        logging.debug({"message": "Cleaned stale repository cache entries", "removed": len(stale_keys)})
+        logging.debug(
+            {
+                "message": "Cleaned stale repository cache entries",
+                "removed": len(stale_keys),
+            }
+        )
 
     return result
 
@@ -314,7 +363,12 @@ async def periodic_cleanup():
             for key in old_keys:
                 repository_cache.pop(key, None)
             if old_keys:
-                logging.info({"message": "Cleaned up repository cache", "removed_entries": len(old_keys)})
+                logging.info(
+                    {
+                        "message": "Cleaned up repository cache",
+                        "removed_entries": len(old_keys),
+                    }
+                )
         except Exception as e:
             logging.error({"message": "Error in periodic cleanup", "error": str(e)})
 
@@ -327,7 +381,12 @@ async def lifespan(app: FastAPI):
     if redis_client:
         try:
             ping_result = await asyncio.to_thread(redis_client.ping)
-            logging.info({"message": "Redis connection validated on startup", "result": ping_result})
+            logging.info(
+                {
+                    "message": "Redis connection validated on startup",
+                    "result": ping_result,
+                }
+            )
         except Exception as e:
             logging.warning({"message": "Redis validation failed on startup", "error": str(e)})
 
@@ -352,7 +411,7 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
     docs_url="/docs" if ENV != "production" else None,
-    redoc_url="/redoc" if ENV != "production" else None
+    redoc_url="/redoc" if ENV != "production" else None,
 )
 
 
@@ -360,16 +419,20 @@ app = FastAPI(
 def rate_limit_key_func(request: Request) -> str:
     """Generate rate limit key based on client IP."""
     return (
-        request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or
-        request.headers.get("X-Real-IP") or
-        request.client.host if request.client else "unknown"
+        request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+        or request.headers.get("X-Real-IP")
+        or request.client.host
+        if request.client
+        else "unknown"
     )
 
 
 limiter = Limiter(
     key_func=rate_limit_key_func,
     default_limits=["10/hour", "2/minute"],
-    storage_uri=f"redis://{os.getenv('REDIS_USERNAME', 'default')}:{os.getenv('REDIS_PASSWORD')}@{os.getenv('REDIS_HOST')}:{os.getenv('REDIS_PORT')}" if redis_client else None
+    storage_uri=f"redis://{os.getenv('REDIS_USERNAME', 'default')}:{os.getenv('REDIS_PASSWORD')}@{os.getenv('REDIS_HOST')}:{os.getenv('REDIS_PORT')}"
+    if redis_client
+    else None,
 )
 app.state.limiter = limiter
 
@@ -377,21 +440,27 @@ app.state.limiter = limiter
 # Remove the default SlowAPI JSON handler for RateLimitExceeded
 # app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+
 # Add a custom handler to render the ratelimit.jinja template
 @app.exception_handler(RateLimitExceeded)
 async def custom_rate_limit_handler(request: Request, exc: RateLimitExceeded):
     """Render a user-friendly rate limit error page."""
-    logging.warning({
-        "message": "Rate limit exceeded",
-        "path": request.url.path,
-        "client_ip": rate_limit_key_func(request),
-        "detail": str(exc.detail) if hasattr(exc, 'detail') else str(exc)
-    })
+    logging.warning(
+        {
+            "message": "Rate limit exceeded",
+            "path": request.url.path,
+            "client_ip": rate_limit_key_func(request),
+            "detail": str(exc.detail) if hasattr(exc, "detail") else str(exc),
+        }
+    )
     return templates.TemplateResponse(
         "ratelimit.jinja",
-        {"request": request, "error_code": 429,
-         "error_message": str(exc.detail) if hasattr(exc, 'detail') else str(exc)},
-        status_code=429
+        {
+            "request": request,
+            "error_code": 429,
+            "error_message": str(exc.detail) if hasattr(exc, "detail") else str(exc),
+        },
+        status_code=429,
     )
 
 
@@ -406,12 +475,18 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
-    max_age=3600
+    max_age=3600,
 )
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
 app.add_middleware(GZipMiddleware, minimum_size=1000)
-app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET_KEY"), session_cookie=SESSION_COOKIE_NAME,
-                   max_age=SESSION_EXPIRY_SECONDS, same_site="lax", https_only=ENV == "production")
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.getenv("SESSION_SECRET_KEY"),
+    session_cookie=SESSION_COOKIE_NAME,
+    max_age=SESSION_EXPIRY_SECONDS,
+    same_site="lax",
+    https_only=ENV == "production",
+)
 
 # Mount static files
 static_dir = Path("static")
@@ -432,12 +507,14 @@ async def force_https_and_security_headers(request: Request, call_next):
 
     try:
         response = await call_next(request)
-        response.headers.update({
-            "X-Content-Type-Options": "nosniff",
-            "X-Frame-Options": "DENY",
-            "X-XSS-Protection": "1; mode=block",
-            "Referrer-Policy": "strict-origin-when-cross-origin"
-        })
+        response.headers.update(
+            {
+                "X-Content-Type-Options": "nosniff",
+                "X-Frame-Options": "DENY",
+                "X-XSS-Protection": "1; mode=block",
+                "Referrer-Policy": "strict-origin-when-cross-origin",
+            }
+        )
         if ENV == "production":
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response
@@ -453,14 +530,25 @@ async def validate_requests(request: Request, call_next):
     if request.url.path == "/health":
         return await call_next(request)
 
-    if not hasattr(request, 'method') or not request.method:
-        logging.warning({"message": "Invalid request without method", "client_ip": rate_limit_key_func(request)})
+    if not hasattr(request, "method") or not request.method:
+        logging.warning(
+            {
+                "message": "Invalid request without method",
+                "client_ip": rate_limit_key_func(request),
+            }
+        )
         return Response("Bad Request", status_code=400)
 
     if request.url.path and any(
-            suspicious in request.url.path.lower() for suspicious in ['../', '.env', 'config', 'admin']):
-        logging.warning({"message": "Suspicious path access attempt", "path": request.url.path,
-                         "client_ip": rate_limit_key_func(request)})
+        suspicious in request.url.path.lower() for suspicious in ["../", ".env", "config", "admin"]
+    ):
+        logging.warning(
+            {
+                "message": "Suspicious path access attempt",
+                "path": request.url.path,
+                "client_ip": rate_limit_key_func(request),
+            }
+        )
         return Response("Not Found", status_code=404)
 
     return await call_next(request)
@@ -482,6 +570,7 @@ async def ddos_protection_middleware(request: Request, call_next):
 
 # Middleware for Cloudflare-only access
 if CLOUDFLARE_ONLY:
+
     @app.middleware("http")
     async def cloudflare_only_middleware(request: Request, call_next):
         """Restrict access to Cloudflare IPs if enabled."""
@@ -537,7 +626,7 @@ async def validate_repository_access(repo_url: str, github_token: str = None) ->
             "error_message": "Invalid GitHub repository URL. Please use format: https://github.com/owner/repo",
             "error_code": "invalid_url",
             "owner": None,
-            "repo_name": None
+            "repo_name": None,
         }
 
     # Extract owner and repo name
@@ -550,7 +639,7 @@ async def validate_repository_access(repo_url: str, github_token: str = None) ->
             "error_message": "Invalid repository path. Please provide both owner and repository name",
             "error_code": "invalid_path",
             "owner": None,
-            "repo_name": None
+            "repo_name": None,
         }
 
     owner, repo_name = segments[0], segments[1]
@@ -561,13 +650,15 @@ async def validate_repository_access(repo_url: str, github_token: str = None) ->
         github_client = Github(github_token) if github_token else Github()
         repo_obj = github_client.get_repo(repo_full_name)
 
-        logging.info({
-            "message": "Successfully validated repository access",
-            "repo": repo_url,
-            "is_public": not repo_obj.private,
-            "owner": owner,
-            "repo_name": repo_name
-        })
+        logging.info(
+            {
+                "message": "Successfully validated repository access",
+                "repo": repo_url,
+                "is_public": not repo_obj.private,
+                "owner": owner,
+                "repo_name": repo_name,
+            }
+        )
 
         return {
             "success": True,
@@ -575,14 +666,14 @@ async def validate_repository_access(repo_url: str, github_token: str = None) ->
             "error_message": None,
             "error_code": None,
             "owner": owner,
-            "repo_name": repo_name
+            "repo_name": repo_name,
         }
 
     except GithubException as e:
         error_details = {
             "repo": repo_url,
             "error": str(e),
-            "status_code": getattr(e, 'status', 'unknown')
+            "status_code": getattr(e, "status", "unknown"),
         }
 
         error_code = "api_error"
@@ -591,9 +682,13 @@ async def validate_repository_access(repo_url: str, github_token: str = None) ->
         if e.status == 404:
             logging.warning({**error_details, "message": "Repository not found or inaccessible"})
             error_code = "not_found_or_private"
-            error_message = "Repository not found or requires authentication. Please verify the URL and access permissions."
+            error_message = (
+                "Repository not found or requires authentication. Please verify the URL and access permissions."
+            )
             if not github_token:
-                error_message = "Repository is private or does not exist. For private repositories, a GitHub token is required."
+                error_message = (
+                    "Repository is private or does not exist. For private repositories, a GitHub token is required."
+                )
 
         elif e.status == 403:
             logging.warning({**error_details, "message": "Access to repository denied"})
@@ -614,37 +709,52 @@ async def validate_repository_access(repo_url: str, github_token: str = None) ->
             "error_message": error_message,
             "error_code": error_code,
             "owner": owner,
-            "repo_name": repo_name
+            "repo_name": repo_name,
         }
 
     except Exception as e:
-        logging.error({
-            "message": "Unexpected error during repository validation",
-            "repo": repo_url,
-            "error": str(e),
-            "type": type(e).__name__
-        })
+        logging.error(
+            {
+                "message": "Unexpected error during repository validation",
+                "repo": repo_url,
+                "error": str(e),
+                "type": type(e).__name__,
+            }
+        )
         return {
             "success": False,
             "is_public": False,
             "error_message": f"An unexpected error occurred: {str(e)}",
             "error_code": "unexpected_error",
             "owner": owner,
-            "repo_name": repo_name
+            "repo_name": repo_name,
         }
 
-async def enforce_private_repo_auth(validation_result: Dict[str, Any], session_data: Optional[GitHubSessionData],
-                                    github_token: Optional[str]) -> tuple[bool, Optional[str]]:
+
+async def enforce_private_repo_auth(
+    validation_result: Dict[str, Any],
+    session_data: Optional[GitHubSessionData],
+    github_token: Optional[str],
+) -> tuple[bool, Optional[str]]:
     """Ensure private repositories require authentication."""
     if not validation_result["success"]:
         return False, validation_result["error_message"]
     if not validation_result["is_public"] and not (session_data and (session_data.access_token or github_token)):
-        return False, "Authentication required to access private repository. Please log in with GitHub."
+        return (
+            False,
+            "Authentication required to access private repository. Please log in with GitHub.",
+        )
     return True, None
 
 
-def build_index_context(request: Request, session_data: Optional[GitHubSessionData] = None, repo_url: str = "",
-                        job_description: str = "", error: Optional[str] = None, path: str = "/") -> Dict[str, Any]:
+def build_index_context(
+    request: Request,
+    session_data: Optional[GitHubSessionData] = None,
+    repo_url: str = "",
+    job_description: str = "",
+    error: Optional[str] = None,
+    path: str = "/",
+) -> Dict[str, Any]:
     """Build context for rendering the index template."""
     is_authenticated = bool(session_data and session_data.access_token)
     return {
@@ -661,7 +771,7 @@ def build_index_context(request: Request, session_data: Optional[GitHubSessionDa
         "github_token": session_data.github_token if session_data else None,
         "is_public": False,
         "current_path": path,
-        "session_id": session_data.session_id if session_data else None
+        "session_id": session_data.session_id if session_data else None,
     }
 
 
@@ -695,7 +805,7 @@ async def health_check():
         "avg_files_per_repo": analytics["avg_files_per_repo"],
         "max_repo_size_mb": analytics["max_repo_size_mb"],
         "max_files_in_repo": analytics["max_files_in_repo"],
-        "timestamp": datetime.now(timezone.utc).isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -756,7 +866,7 @@ async def login(request: Request):
     session = GitHubSessionData(
         user_id=str(uuid.uuid4()),
         session_id=session_id,
-        created_at=datetime.now(timezone.utc).isoformat()
+        created_at=datetime.now(timezone.utc).isoformat(),
     )
     await save_session(session)
     # --- Analytics: increment unique users ---
@@ -773,7 +883,7 @@ async def login(request: Request):
         "redirect_uri": os.getenv("CALLBACK_URL"),
         "scope": "repo user",
         "state": state,
-        "response_type": "code"
+        "response_type": "code",
     }
 
     github_auth_url = f"https://github.com/login/oauth/authorize?{urllib.parse.urlencode(params)}"
@@ -787,25 +897,47 @@ async def login(request: Request):
 @limiter.limit("5/minute")
 async def callback(request: Request, code: str = None, state: str = None, error: str = None):
     """Handle GitHub OAuth callback."""
-    logging.info({"message": "OAuth callback received", "query_params": dict(request.query_params)})
+    logging.info(
+        {
+            "message": "OAuth callback received",
+            "query_params": dict(request.query_params),
+        }
+    )
 
     if error:
         logging.error({"message": "OAuth error from GitHub", "error": error})
         return RedirectResponse(url="/?error=oauth_failed", status_code=302)
 
     if not code or not state:
-        logging.error({"message": "Missing required OAuth parameters", "code": bool(code), "state": bool(state)})
+        logging.error(
+            {
+                "message": "Missing required OAuth parameters",
+                "code": bool(code),
+                "state": bool(state),
+            }
+        )
         return RedirectResponse(url="/?error=missing_params", status_code=302)
 
     session_state = request.session.get("oauth_state")
     if not session_state or state != session_state:
-        logging.error({"message": "Invalid OAuth state", "provided_state": state, "expected_state": session_state})
+        logging.error(
+            {
+                "message": "Invalid OAuth state",
+                "provided_state": state,
+                "expected_state": session_state,
+            }
+        )
         return RedirectResponse(url="/?error=invalid_state", status_code=302)
 
     session_id = request.session.get("session_id")
     session = await get_session(session_id)
     if not session_id or not session:
-        logging.error({"message": "Invalid session during OAuth callback", "session_id": session_id})
+        logging.error(
+            {
+                "message": "Invalid session during OAuth callback",
+                "session_id": session_id,
+            }
+        )
         return RedirectResponse(url="/?error=invalid_session", status_code=302)
 
     github_client_id = os.getenv("GITHUB_CLIENT_ID")
@@ -822,9 +954,9 @@ async def callback(request: Request, code: str = None, state: str = None, error:
                     "client_id": github_client_id,
                     "client_secret": github_client_secret,
                     "code": code,
-                    "redirect_uri": os.getenv("CALLBACK_URL")
+                    "redirect_uri": os.getenv("CALLBACK_URL"),
                 },
-                headers={"Accept": "application/json"}
+                headers={"Accept": "application/json"},
             )
             response.raise_for_status()
             data = response.json()
@@ -840,7 +972,13 @@ async def callback(request: Request, code: str = None, state: str = None, error:
             request.session["github_user"] = user.login
             request.session["authenticated"] = True
             await save_session(session)
-            logging.info({"message": "User authenticated successfully", "session_id": session_id, "user": user.login})
+            logging.info(
+                {
+                    "message": "User authenticated successfully",
+                    "session_id": session_id,
+                    "user": user.login,
+                }
+            )
 
             request.session.pop("oauth_state", None)
             response = RedirectResponse(url="/", status_code=302)
@@ -848,8 +986,13 @@ async def callback(request: Request, code: str = None, state: str = None, error:
             return response
         except httpx.HTTPStatusError as e:
             logging.error(
-                {"message": "OAuth token exchange failed", "status_code": e.response.status_code, "error": str(e),
-                 "response_text": e.response.text})
+                {
+                    "message": "OAuth token exchange failed",
+                    "status_code": e.response.status_code,
+                    "error": str(e),
+                    "response_text": e.response.text,
+                }
+            )
             return RedirectResponse(url="/?error=token_exchange_failed", status_code=302)
         except GithubException as e:
             logging.error({"message": "GitHub user validation failed", "error": str(e)})
@@ -890,8 +1033,13 @@ async def get_generation_data(session_id: str, generation_id: str) -> Optional[d
         return json.loads(data)
     except Exception as e:
         logging.warning(
-            {"message": "Invalid generation data in Redis", "session_id": session_id, "generation_id": generation_id,
-             "error": str(e)})
+            {
+                "message": "Invalid generation data in Redis",
+                "session_id": session_id,
+                "generation_id": generation_id,
+                "error": str(e),
+            }
+        )
         return None
 
 
@@ -903,7 +1051,7 @@ async def save_generation_data(session_id: str, generation_id: str, data: dict, 
         redis_client.setex,
         f"generation:{session_id}:{generation_id}",
         expiry,
-        json.dumps(data)
+        json.dumps(data),
     )
 
 
@@ -921,68 +1069,123 @@ async def process_resume_generation(websocket: WebSocket, session_data: GitHubSe
         error_message = validation_result["error_message"]
         if validation_result["error_code"] in ["auth_required", "access_denied"] and not token_to_use:
             error_message += ". Please provide a GitHub token or log in with GitHub."
-        logging.error({"message": "Repository access validation failed", "repo": repo_url, "error": error_message})
+        logging.error(
+            {
+                "message": "Repository access validation failed",
+                "repo": repo_url,
+                "error": error_message,
+            }
+        )
         await websocket.send_text(
-            json.dumps({"type": "error", "content": error_message, "generation_id": generation_id}))
-        await save_generation_data(session_data.session_id, generation_id, {"status": "error", "error": error_message})
+            json.dumps(
+                {
+                    "type": "error",
+                    "content": error_message,
+                    "generation_id": generation_id,
+                }
+            )
+        )
+        await save_generation_data(
+            session_data.session_id,
+            generation_id,
+            {"status": "error", "error": error_message},
+        )
         return False
 
-    is_public = validation_result["is_public"]
     owner, repo_name = validation_result["owner"], validation_result["repo_name"]
 
     # --- Fast repo size check (avoid deep API calls) ---
     try:
         g = Github(token_to_use) if token_to_use else Github()
         repo_obj = g.get_repo(f"{owner}/{repo_name}")
-        repo_size_mb = repo_obj.size / 1024 if hasattr(repo_obj, 'size') else 0
+        repo_size_mb = repo_obj.size / 1024 if hasattr(repo_obj, "size") else 0
         cache_key = f"large_repo:{owner}/{repo_name}"
         # Check redis cache for large repo flag
         if redis_client:
             cached_large = await asyncio.to_thread(redis_client.get, cache_key)
-            if cached_large == '1':
-                await websocket.send_text(json.dumps({
-                    "type": "error",
-                    "content": f"This repository is too large to process. Large repositories are not supported. If you would like to help support the developer to cover expenses for large repo support, please reach out!",
-                    "generation_id": generation_id
-                }))
-                await save_generation_data(session_data.session_id, generation_id,
-                                           {"status": "error", "error": "Large repository not supported."})
+            if cached_large == "1":
+                await websocket.send_text(
+                    json.dumps(
+                        {
+                            "type": "error",
+                            "content": "This repository is too large to process. Large repositories are not supported. If you would like to help support the developer to cover expenses for large repo support, please reach out!",
+                            "generation_id": generation_id,
+                        }
+                    )
+                )
+                await save_generation_data(
+                    session_data.session_id,
+                    generation_id,
+                    {"status": "error", "error": "Large repository not supported."},
+                )
                 return False
         if repo_size_mb > 150:  # 150 MB limit for fast pre-check
             if redis_client:
-                await asyncio.to_thread(redis_client.setex, cache_key, 86400, '1')  # Cache for 1 day
-            await websocket.send_text(json.dumps({
-                "type": "error",
-                "content": f"This repository is too large to process (over 150 MB, {repo_size_mb:.2f} MB). Large repositories are not supported. If you would like to help support the developer to cover expenses for large repo support, please reach out!",
-                "generation_id": generation_id
-            }))
-            await save_generation_data(session_data.session_id, generation_id,
-                                       {"status": "error", "error": "Large repository not supported."})
+                await asyncio.to_thread(redis_client.setex, cache_key, 86400, "1")  # Cache for 1 day
+            await websocket.send_text(
+                json.dumps(
+                    {
+                        "type": "error",
+                        "content": f"This repository is too large to process (over 150 MB, {repo_size_mb:.2f} MB). Large repositories are not supported. If you would like to help support the developer to cover expenses for large repo support, please reach out!",
+                        "generation_id": generation_id,
+                    }
+                )
+            )
+            await save_generation_data(
+                session_data.session_id,
+                generation_id,
+                {"status": "error", "error": "Large repository not supported."},
+            )
             return False
     except Exception as e:
-        logging.warning({"message": "Could not estimate repository size for fast check", "error": str(e)})
+        logging.warning(
+            {
+                "message": "Could not estimate repository size for fast check",
+                "error": str(e),
+            }
+        )
 
-    await websocket.send_text(json.dumps(
-        {"type": "status", "content": f"🔄 Checking for existing repository clone: {repo_url}",
-         "generation_id": generation_id}))
+    await websocket.send_text(
+        json.dumps(
+            {
+                "type": "status",
+                "content": f"🔄 Checking for existing repository clone: {repo_url}",
+                "generation_id": generation_id,
+            }
+        )
+    )
     await save_generation_data(session_data.session_id, generation_id, {"status": "cloning"})
 
     local_path = session_data.local_path
     clone_result = None
     if local_path and Path(local_path).exists():
-        await websocket.send_text(json.dumps(
-            {"type": "status", "content": "🔄 Using existing repository clone", "generation_id": generation_id}))
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "type": "status",
+                    "content": "🔄 Using existing repository clone",
+                    "generation_id": generation_id,
+                }
+            )
+        )
         stats = await get_filtered_repo_stats(local_path)
         clone_result = {
             "success": True,
             "local_path": local_path,
             "repo_name": f"{owner}/{repo_name}",
             "repo_size_mb": stats["repo_size_mb"],
-            "file_count": stats["file_count"]
+            "file_count": stats["file_count"],
         }
     else:
-        await websocket.send_text(json.dumps(
-            {"type": "status", "content": f"🔄 Cloning repository: {repo_url}", "generation_id": generation_id}))
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "type": "status",
+                    "content": f"🔄 Cloning repository: {repo_url}",
+                    "generation_id": generation_id,
+                }
+            )
+        )
         target_dir = Path(f"/tmp/{session_data.session_id}")
         clone_result = await clone_repo_tool(repo_url, str(target_dir), token_to_use)
         local_path = clone_result.get("local_path")
@@ -999,61 +1202,126 @@ async def process_resume_generation(websocket: WebSocket, session_data: GitHubSe
         cache_key = f"large_repo:{owner}/{repo_name}"
         if redis_client:
             cached_large = await asyncio.to_thread(redis_client.get, cache_key)
-            if cached_large == '1':
-                await websocket.send_text(json.dumps({
-                    "type": "error",
-                    "content": f"This repository contains {file_count} files, which exceeds the current limit of 100 files. Large repositories are not supported. If you would like to help support the developer to cover expenses for large repo support, please reach out!",
-                    "generation_id": generation_id
-                }))
-                await save_generation_data(session_data.session_id, generation_id,
-                                           {"status": "error", "error": "Large repository not supported."})
+            if cached_large == "1":
+                await websocket.send_text(
+                    json.dumps(
+                        {
+                            "type": "error",
+                            "content": f"This repository contains {file_count} files, which exceeds the current limit of 100 files. Large repositories are not supported. If you would like to help support the developer to cover expenses for large repo support, please reach out!",
+                            "generation_id": generation_id,
+                        }
+                    )
+                )
+                await save_generation_data(
+                    session_data.session_id,
+                    generation_id,
+                    {"status": "error", "error": "Large repository not supported."},
+                )
                 try:
                     await asyncio.to_thread(robust_rmtree, local_path)
                 except Exception as e:
-                    logging.warning({"message": "Failed to clean up after large repo abort", "error": str(e)})
+                    logging.warning(
+                        {
+                            "message": "Failed to clean up after large repo abort",
+                            "error": str(e),
+                        }
+                    )
                 session_data.local_path = None
                 await save_session(session_data)
                 return False
         if file_count > 200:
             if redis_client:
-                await asyncio.to_thread(redis_client.setex, cache_key, 86400, '1')  # Cache for 1 day
-            await websocket.send_text(json.dumps({
-                "type": "error",
-                "content": f"This repository contains {file_count} files, which exceeds the current limit of 100 files. Large repositories are not supported. If you would like to help support the developer to cover expenses for large repo support, please reach out!",
-                "generation_id": generation_id
-            }))
-            await save_generation_data(session_data.session_id, generation_id,
-                                       {"status": "error", "error": "Large repository not supported."})
+                await asyncio.to_thread(redis_client.setex, cache_key, 86400, "1")  # Cache for 1 day
+            await websocket.send_text(
+                json.dumps(
+                    {
+                        "type": "error",
+                        "content": f"This repository contains {file_count} files, which exceeds the current limit of 100 files. Large repositories are not supported. If you would like to help support the developer to cover expenses for large repo support, please reach out!",
+                        "generation_id": generation_id,
+                    }
+                )
+            )
+            await save_generation_data(
+                session_data.session_id,
+                generation_id,
+                {"status": "error", "error": "Large repository not supported."},
+            )
             # Clean up the cloned repo
             try:
                 await asyncio.to_thread(robust_rmtree, local_path)
             except Exception as e:
-                logging.warning({"message": "Failed to clean up after large repo abort", "error": str(e)})
+                logging.warning(
+                    {
+                        "message": "Failed to clean up after large repo abort",
+                        "error": str(e),
+                    }
+                )
             session_data.local_path = None
             await save_session(session_data)
             return False
 
     if not clone_result or not clone_result["success"]:
         error_msg = clone_result.get("error", "Unknown cloning error") if clone_result else "Failed to clone repository"
-        logging.error({"message": "Repository cloning failed", "repo": repo_url, "error": error_msg,
-                       "session_id": session_data.session_id})
-        await websocket.send_text(json.dumps(
-            {"type": "error", "content": f"Failed to clone repository: {error_msg}", "generation_id": generation_id}))
-        await save_generation_data(session_data.session_id, generation_id, {"status": "error", "error": error_msg})
+        logging.error(
+            {
+                "message": "Repository cloning failed",
+                "repo": repo_url,
+                "error": error_msg,
+                "session_id": session_data.session_id,
+            }
+        )
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "type": "error",
+                    "content": f"Failed to clone repository: {error_msg}",
+                    "generation_id": generation_id,
+                }
+            )
+        )
+        await save_generation_data(
+            session_data.session_id,
+            generation_id,
+            {"status": "error", "error": error_msg},
+        )
         return False
 
-    await websocket.send_text(json.dumps(
-        {"type": "status", "content": "📊 Analyzing repository structure...", "generation_id": generation_id}))
+    await websocket.send_text(
+        json.dumps(
+            {
+                "type": "status",
+                "content": "📊 Analyzing repository structure...",
+                "generation_id": generation_id,
+            }
+        )
+    )
     await save_generation_data(session_data.session_id, generation_id, {"status": "analyzing"})
 
-    ingest_result = await gitingest_tool(clone_result['local_path'])
+    ingest_result = await gitingest_tool(clone_result["local_path"])
     if not ingest_result["success"]:
         error_msg = ingest_result.get("error", "Unknown analysis error")
-        logging.error({"message": "Repository analysis failed", "repo": repo_url, "error": error_msg,
-                       "session_id": session_data.session_id})
-        await websocket.send_text(json.dumps(
-            {"type": "error", "content": f"Failed to analyze repository: {error_msg}", "generation_id": generation_id}))
-        await save_generation_data(session_data.session_id, generation_id, {"status": "error", "error": error_msg})
+        logging.error(
+            {
+                "message": "Repository analysis failed",
+                "repo": repo_url,
+                "error": error_msg,
+                "session_id": session_data.session_id,
+            }
+        )
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "type": "error",
+                    "content": f"Failed to analyze repository: {error_msg}",
+                    "generation_id": generation_id,
+                }
+            )
+        )
+        await save_generation_data(
+            session_data.session_id,
+            generation_id,
+            {"status": "error", "error": error_msg},
+        )
         return False
 
     # --- Analytics: increment repos analyzed, repo size, and file count ---
@@ -1062,53 +1330,90 @@ async def process_resume_generation(websocket: WebSocket, session_data: GitHubSe
     file_count = clone_result.get("file_count", 0)
     await increment_repo_size_and_files(repo_size_mb, file_count)
 
-    await websocket.send_text(json.dumps(
-        {"type": "status", "content": "📝 Generating resume content with AI...", "generation_id": generation_id}))
+    await websocket.send_text(
+        json.dumps(
+            {
+                "type": "status",
+                "content": "📝 Generating resume content with AI...",
+                "generation_id": generation_id,
+            }
+        )
+    )
     await save_generation_data(session_data.session_id, generation_id, {"status": "generating"})
 
     resume_result = await create_resume_tool(
-        gitingest_summary=ingest_result['summary'],
-        gitingest_tree=ingest_result['tree'],
-        gitingest_content=ingest_result['content'],
-        project_name=clone_result['repo_name'],
+        gitingest_summary=ingest_result["summary"],
+        gitingest_tree=ingest_result["tree"],
+        gitingest_content=ingest_result["content"],
+        project_name=clone_result["repo_name"],
         job_description=job_description,
         websocket=websocket,
-        generation_id=generation_id
+        generation_id=generation_id,
     )
 
     if not resume_result["success"]:
         error_msg = resume_result.get("error", "Unknown generation error")
-        logging.error({"message": "Resume generation failed", "repo": repo_url, "error": error_msg,
-                       "session_id": session_data.session_id})
-        await websocket.send_text(json.dumps(
-            {"type": "error", "content": f"Failed to generate resume: {error_msg}", "generation_id": generation_id}))
-        await save_generation_data(session_data.session_id, generation_id, {"status": "error", "error": error_msg})
+        logging.error(
+            {
+                "message": "Resume generation failed",
+                "repo": repo_url,
+                "error": error_msg,
+                "session_id": session_data.session_id,
+            }
+        )
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "type": "error",
+                    "content": f"Failed to generate resume: {error_msg}",
+                    "generation_id": generation_id,
+                }
+            )
+        )
+        await save_generation_data(
+            session_data.session_id,
+            generation_id,
+            {"status": "error", "error": error_msg},
+        )
         return False
 
     final_result = {
-        "project_title": resume_result['project_title'],
-        "tech_stack": resume_result['tech_stack'],
-        "bullet_points": [str(bp) for bp in resume_result['bullet_points']],
-        "additional_notes": resume_result.get('additional_notes', ''),
-        "future_plans": resume_result.get('future_plans', ''),
-        "potential_advancements": resume_result.get('potential_advancements', ''),
-        "interview_questions": resume_result.get('interview_questions', []),
-        "repo_info": {"name": clone_result['repo_name']}
+        "project_title": resume_result["project_title"],
+        "tech_stack": resume_result["tech_stack"],
+        "bullet_points": [str(bp) for bp in resume_result["bullet_points"]],
+        "additional_notes": resume_result.get("additional_notes", ""),
+        "future_plans": resume_result.get("future_plans", ""),
+        "potential_advancements": resume_result.get("potential_advancements", ""),
+        "interview_questions": resume_result.get("interview_questions", []),
+        "repo_info": {"name": clone_result["repo_name"]},
     }
 
-    await websocket.send_text(json.dumps({
-        "type": "complete",
-        "content": "Generation complete!",
-        "result": final_result,
-        "redirect_path": path,
-        "generation_id": generation_id
-    }))
-    await save_generation_data(session_data.session_id, generation_id, {"status": "complete", "result": final_result})
+    await websocket.send_text(
+        json.dumps(
+            {
+                "type": "complete",
+                "content": "Generation complete!",
+                "result": final_result,
+                "redirect_path": path,
+                "generation_id": generation_id,
+            }
+        )
+    )
+    await save_generation_data(
+        session_data.session_id,
+        generation_id,
+        {"status": "complete", "result": final_result},
+    )
     session_data.status = "complete"
     await save_session(session_data)
     logging.info(
-        {"message": "Resume generation completed successfully", "session_id": session_data.session_id, "repo": repo_url,
-         "generation_id": generation_id})
+        {
+            "message": "Resume generation completed successfully",
+            "session_id": session_data.session_id,
+            "repo": repo_url,
+            "generation_id": generation_id,
+        }
+    )
     return True
 
 
@@ -1119,9 +1424,20 @@ async def dynamic_github_route(request: Request, path: str):
     session_id = request.session.get("session_id")
     session_data = await get_session(session_id) if session_id else None
     skip_paths = {
-        "", "health", "favicon.ico", "favicon-16x16.png", "favicon-32x32.png",
-        "apple-touch-icon.png", "static", "ws", "login", "callback", "logout",
-        "docs", "redoc", "openapi.json"
+        "",
+        "health",
+        "favicon.ico",
+        "favicon-16x16.png",
+        "favicon-32x32.png",
+        "apple-touch-icon.png",
+        "static",
+        "ws",
+        "login",
+        "callback",
+        "logout",
+        "docs",
+        "redoc",
+        "openapi.json",
     }
 
     # Handle root URL and reserved paths
@@ -1129,58 +1445,91 @@ async def dynamic_github_route(request: Request, path: str):
         if path == "":
             return await home(request)  # Redirect to home endpoint for root URL
         logging.warning(
-            {"message": "Access attempt to restricted path", "path": path, "client_ip": rate_limit_key_func(request)})
+            {
+                "message": "Access attempt to restricted path",
+                "path": path,
+                "client_ip": rate_limit_key_func(request),
+            }
+        )
         raise HTTPException(status_code=404, detail="Not found")
 
-    segments = [segment for segment in path.split('/') if segment]
+    segments = [segment for segment in path.split("/") if segment]
     if len(segments) < 2:
         logging.info({"message": "Invalid GitHub URL format", "path": path})
         domain = request.headers.get("host") or request.url.hostname or "this-site"
-        return templates.TemplateResponse("index.jinja", build_index_context(
-            request=request,
-            repo_url="",
-            job_description="",
-            error=f"Invalid GitHub URL format. Expected format: {domain}/username/repository",
-            path=f"/{path}"
-        ))
+        return templates.TemplateResponse(
+            "index.jinja",
+            build_index_context(
+                request=request,
+                repo_url="",
+                job_description="",
+                error=f"Invalid GitHub URL format. Expected format: {domain}/username/repository",
+                path=f"/{path}",
+            ),
+        )
 
     username, repo = sanitize_input(segments[0], 100), sanitize_input(segments[1], 100)
-    if not username or not repo or not re.match(r'^[a-zA-Z0-9_.-]+$', username) or not re.match(r'^[a-zA-Z0-9_.-]+$',
-                                                                                                repo):
-        logging.warning({"message": "Invalid username or repository name", "username": username, "repo": repo})
-        return templates.TemplateResponse("index.jinja", build_index_context(
-            request=request,
-            repo_url="",
-            job_description="",
-            error="Invalid repository name format",
-            path=f"/{path}"
-        ))
+    if (
+        not username
+        or not repo
+        or not re.match(r"^[a-zA-Z0-9_.-]+$", username)
+        or not re.match(r"^[a-zA-Z0-9_.-]+$", repo)
+    ):
+        logging.warning(
+            {
+                "message": "Invalid username or repository name",
+                "username": username,
+                "repo": repo,
+            }
+        )
+        return templates.TemplateResponse(
+            "index.jinja",
+            build_index_context(
+                request=request,
+                repo_url="",
+                job_description="",
+                error="Invalid repository name format",
+                path=f"/{path}",
+            ),
+        )
 
     github_url = f"https://github.com/{username}/{repo}"
-    validation_result = await get_cached_repository_validation(github_url,
-                                                               session_data.access_token if session_data else None)
+    validation_result = await get_cached_repository_validation(
+        github_url, session_data.access_token if session_data else None
+    )
     if not validation_result["success"]:
-        return templates.TemplateResponse("index.jinja", build_index_context(
+        return templates.TemplateResponse(
+            "index.jinja",
+            build_index_context(
+                request=request,
+                repo_url=github_url,
+                job_description="",
+                error=validation_result["error_message"],
+                path=f"/{path}",
+            ),
+        )
+
+    return templates.TemplateResponse(
+        "index.jinja",
+        build_index_context(
             request=request,
             repo_url=github_url,
             job_description="",
-            error=validation_result["error_message"],
-            path=f"/{path}"
-        ))
-
-    return templates.TemplateResponse("index.jinja", build_index_context(
-        request=request,
-        repo_url=github_url,
-        job_description="",
-        error=None,
-        path=f"/{path}"
-    ))
+            error=None,
+            path=f"/{path}",
+        ),
+    )
 
 
 @app.post("/{path:path}", response_class=HTMLResponse)
 @limiter.limit("5/minute")
-async def dynamic_github_route_post(request: Request, path: str, repo_url: str = Form(...),
-                                    job_description_hidden: str = Form(""), github_token: Optional[str] = Form(None)):
+async def dynamic_github_route_post(
+    request: Request,
+    path: str,
+    repo_url: str = Form(...),
+    job_description_hidden: str = Form(""),
+    github_token: Optional[str] = Form(None),
+):
     """Handle POST requests for dynamic GitHub repository URLs."""
     repo_url = sanitize_input(repo_url, 200)
     job_description = sanitize_input(job_description_hidden, 5000)
@@ -1189,18 +1538,22 @@ async def dynamic_github_route_post(request: Request, path: str, repo_url: str =
     session_id = request.session.get("session_id")
     session_data = await get_session(session_id) if session_id else None
 
-    validation_result = await get_cached_repository_validation(repo_url, github_token or (
-        session_data.access_token if session_data else None))
+    validation_result = await get_cached_repository_validation(
+        repo_url, github_token or (session_data.access_token if session_data else None)
+    )
     is_allowed, error_msg = await enforce_private_repo_auth(validation_result, session_data, github_token)
     if not is_allowed:
-        return templates.TemplateResponse("index.jinja", build_index_context(
-            request=request,
-            session_data=session_data,
-            repo_url=repo_url,
-            job_description=job_description,
-            error=error_msg,
-            path=f"/{path}"
-        ))
+        return templates.TemplateResponse(
+            "index.jinja",
+            build_index_context(
+                request=request,
+                session_data=session_data,
+                repo_url=repo_url,
+                job_description=job_description,
+                error=error_msg,
+                path=f"/{path}",
+            ),
+        )
 
     if not session_id or not session_data:
         session_id = str(uuid.uuid4())
@@ -1213,7 +1566,7 @@ async def dynamic_github_route_post(request: Request, path: str, repo_url: str =
             access_token=None,
             repo_url=repo_url,
             job_description=job_description.strip() or None,
-            status="pending"
+            status="pending",
         )
         # --- Analytics: increment unique users ---
         await increment_analytics_counter(ANALYTICS_TOTAL_USERS_KEY, session_id)
@@ -1231,13 +1584,27 @@ async def dynamic_github_route_post(request: Request, path: str, repo_url: str =
     session_data.redirect_url = f"/{dynamic_path_segment}"
     await save_session(session_data)
 
-    logging.info({"message": "Resume generation session initiated", "session_id": session_id,
-                  "is_authenticated": bool(session_data.access_token)})
-    response = templates.TemplateResponse("index.jinja", {
-        **build_index_context(request, session_data, repo_url, job_description, path=f"/{dynamic_path_segment}"),
-        "streaming": True,
-        "is_public": validation_result.get("is_public", False)
-    })
+    logging.info(
+        {
+            "message": "Resume generation session initiated",
+            "session_id": session_id,
+            "is_authenticated": bool(session_data.access_token),
+        }
+    )
+    response = templates.TemplateResponse(
+        "index.jinja",
+        {
+            **build_index_context(
+                request,
+                session_data,
+                repo_url,
+                job_description,
+                path=f"/{dynamic_path_segment}",
+            ),
+            "streaming": True,
+            "is_public": validation_result.get("is_public", False),
+        },
+    )
     set_session_cookie(response, session_id)
     return response
 
@@ -1252,8 +1619,12 @@ async def home(request: Request):
 
 @app.post("/", response_class=HTMLResponse)
 @limiter.limit("5/minute")
-async def generate_resume(request: Request, repo_url: str = Form(...), job_description_hidden: str = Form(""),
-                          github_token: Optional[str] = Form(None)):
+async def generate_resume(
+    request: Request,
+    repo_url: str = Form(...),
+    job_description_hidden: str = Form(""),
+    github_token: Optional[str] = Form(None),
+):
     """Handle resume generation POST requests."""
     return await dynamic_github_route_post(request, "", repo_url, job_description_hidden, github_token)
 
@@ -1262,10 +1633,21 @@ async def generate_resume(request: Request, repo_url: str = Form(...), job_descr
 async def websocket_endpoint(websocket: WebSocket, session_id: str, generation_id: str = Query(...)):
     """Handle WebSocket connections for resume generation."""
     logging.info(
-        {"message": "WebSocket connection initiated", "session_id": session_id, "generation_id": generation_id})
+        {
+            "message": "WebSocket connection initiated",
+            "session_id": session_id,
+            "generation_id": generation_id,
+        }
+    )
 
-    if not re.match(r'^[a-f0-9-]{36}$', session_id) or not re.match(r'^[a-f0-9-]{36}$', generation_id):
-        logging.error({"message": "Invalid ID format", "session_id": session_id, "generation_id": generation_id})
+    if not re.match(r"^[a-f0-9-]{36}$", session_id) or not re.match(r"^[a-f0-9-]{36}$", generation_id):
+        logging.error(
+            {
+                "message": "Invalid ID format",
+                "session_id": session_id,
+                "generation_id": generation_id,
+            }
+        )
         await websocket.close(code=4003, reason="Invalid session or generation ID")
         return
 
@@ -1273,19 +1655,30 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, generation_i
     session_data = await get_session(session_id)
     if not session_data:
         await websocket.send_text(
-            json.dumps({"type": "error", "content": "Invalid session ID", "generation_id": generation_id}))
+            json.dumps(
+                {
+                    "type": "error",
+                    "content": "Invalid session ID",
+                    "generation_id": generation_id,
+                }
+            )
+        )
         await websocket.close(code=4003)
         return
 
     existing_generation = await get_generation_data(session_id, generation_id)
     if existing_generation and existing_generation.get("status") == "complete":
-        await websocket.send_text(json.dumps({
-            "type": "complete",
-            "content": "Generation complete!",
-            "result": existing_generation.get("result"),
-            "redirect_path": session_data.redirect_url or "/",
-            "generation_id": generation_id
-        }))
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "type": "complete",
+                    "content": "Generation complete!",
+                    "result": existing_generation.get("result"),
+                    "redirect_path": session_data.redirect_url or "/",
+                    "generation_id": generation_id,
+                }
+            )
+        )
         await websocket.close(code=1000)
         return
 
@@ -1298,16 +1691,34 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, generation_i
             await websocket.close(code=4002)
     except WebSocketDisconnect:
         logging.warning(
-            {"message": "WebSocket disconnected by client", "session_id": session_id, "generation_id": generation_id})
+            {
+                "message": "WebSocket disconnected by client",
+                "session_id": session_id,
+                "generation_id": generation_id,
+            }
+        )
         await save_generation_data(session_id, generation_id, {"status": "disconnected"})
         session_data.status = "disconnected"
         await save_session(session_data)
     except Exception as e:
         logging.error(
-            {"message": "Unrecoverable WebSocket error", "session_id": session_id, "generation_id": generation_id,
-             "error": str(e), "type": type(e).__name__})
+            {
+                "message": "Unrecoverable WebSocket error",
+                "session_id": session_id,
+                "generation_id": generation_id,
+                "error": str(e),
+                "type": type(e).__name__,
+            }
+        )
         await websocket.send_text(
-            json.dumps({"type": "error", "content": f"Unexpected error: {str(e)}", "generation_id": generation_id}))
+            json.dumps(
+                {
+                    "type": "error",
+                    "content": f"Unexpected error: {str(e)}",
+                    "generation_id": generation_id,
+                }
+            )
+        )
         await save_generation_data(session_id, generation_id, {"status": "error", "error": str(e)})
         session_data.status = "error"
         await save_session(session_data)
@@ -1315,13 +1726,24 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, generation_i
     finally:
         if session_data.local_path:
             try:
-                logging.info({"message": "Cleaning up local repository files", "session_id": session_id,
-                              "path": session_data.local_path})
+                logging.info(
+                    {
+                        "message": "Cleaning up local repository files",
+                        "session_id": session_id,
+                        "path": session_data.local_path,
+                    }
+                )
                 await asyncio.to_thread(robust_rmtree, session_data.local_path)
                 session_data.local_path = None
                 await save_session(session_data)
             except Exception as e:
-                logging.error({"message": "Failed to cleanup local files", "session_id": session_id, "error": str(e)})
+                logging.error(
+                    {
+                        "message": "Failed to cleanup local files",
+                        "session_id": session_id,
+                        "error": str(e),
+                    }
+                )
         if session_data.status == "active":
             session_data.status = "complete"
             await save_session(session_data)
@@ -1331,18 +1753,20 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, generation_i
 @app.exception_handler(StarletteHTTPException)
 async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException):
     """Handle HTTP exceptions with custom templates."""
-    logging.warning({
-        "message": "HTTP exception",
-        "status_code": exc.status_code,
-        "detail": str(exc.detail),
-        "path": request.url.path
-    })
+    logging.warning(
+        {
+            "message": "HTTP exception",
+            "status_code": exc.status_code,
+            "detail": str(exc.detail),
+            "path": request.url.path,
+        }
+    )
     # Custom error context for template
     error_context = {
         "request": request,
         "error_code": exc.status_code,
-        "error_title": exc.detail if hasattr(exc, 'detail') and exc.detail else "Error",
-        "error_message": str(exc.detail) if hasattr(exc, 'detail') and exc.detail else "An error occurred."
+        "error_title": exc.detail if hasattr(exc, "detail") and exc.detail else "Error",
+        "error_message": str(exc.detail) if hasattr(exc, "detail") and exc.detail else "An error occurred.",
     }
     if exc.status_code == 404:
         # Always render 404.jinja with error context
@@ -1355,25 +1779,37 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
 @app.exception_handler(Exception)
 async def generic_exception_handler(request: Request, exc: Exception):
     """Handle uncaught exceptions with a user-friendly error page."""
-    logging.error({
-        "message": "Unhandled exception",
-        "error": str(exc),
-        "type": type(exc).__name__,
-        "path": request.url.path,
-        "method": request.method
-    })
+    logging.error(
+        {
+            "message": "Unhandled exception",
+            "error": str(exc),
+            "type": type(exc).__name__,
+            "path": request.url.path,
+            "method": request.method,
+        }
+    )
     error_context = {
         "request": request,
         "error_code": 500,
         "error_title": "Internal Server Error",
-        "error_message": str(exc) or "An unexpected error occurred."
+        "error_message": str(exc) or "An unexpected error occurred.",
     }
     return templates.TemplateResponse("500.jinja", error_context, status_code=500)
 
 
-@app.route("/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
+@app.route(
+    "/{full_path:path}",
+    methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"],
+)
 async def fallback_route(request: Request, full_path: str):
     """Handle unmatched routes."""
-    logging.warning({"message": "Unmatched route accessed", "path": full_path, "method": request.method,
-                     "client_ip": rate_limit_key_func(request), "user_agent": request.headers.get("User-Agent", "")})
+    logging.warning(
+        {
+            "message": "Unmatched route accessed",
+            "path": full_path,
+            "method": request.method,
+            "client_ip": rate_limit_key_func(request),
+            "user_agent": request.headers.get("User-Agent", ""),
+        }
+    )
     return templates.TemplateResponse("404.jinja", {"request": request}, status_code=404)

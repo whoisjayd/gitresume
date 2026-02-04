@@ -12,8 +12,4 @@ test:
 	uv run pytest
 
 clean:
-	if exist dist rmdir /s /q dist
-	if exist build rmdir /s /q build
-	if exist .pytest_cache rmdir /s /q .pytest_cache
-	if exist .ruff_cache rmdir /s /q .ruff_cache
-	for /d /r . %%d in (__pycache__) do @if exist "%%d" rmdir /s /q "%%d"
+	uv run python -c "import os, shutil; [shutil.rmtree(p) for p in ['dist', 'build', '.pytest_cache', '.ruff_cache'] if os.path.exists(p)]; [[shutil.rmtree(os.path.join(r, d)) for d in dirs if d == '__pycache__'] for r, dirs, files in os.walk('.')]"

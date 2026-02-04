@@ -25,9 +25,19 @@ dependencies = [
     "uvicorn>=0.40.0",
 ]
 
-[dependency-groups]
-dev = [
-    "pyright>=1.1.408",
-    "pytest>=9.0.2",
-    "ruff>=0.15.0",
-]
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E402", "E501"] # Allow imports not at top of file and long lines for legacy compatibility
+
+[project.scripts]
+gitresume = "main:app"
+
+[tool.pyright]
+include = ["tools", "main.py", "app.py"]
+exclude = ["**/__pycache__", ".venv"]
+pythonVersion = "3.10"
+typeCheckingMode = "basic"

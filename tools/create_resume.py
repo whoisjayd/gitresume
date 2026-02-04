@@ -10,7 +10,7 @@ import json
 import logging
 import os
 import re
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import WebSocket
 from starlette.websockets import WebSocketState
@@ -65,7 +65,7 @@ Transform raw codebase analysis into high-impact professional narrative by ident
 
 ### **Prioritization Hierarchy (Most Important First)**
 1. **Technical Innovation & Complexity** - Novel algorithms, advanced patterns, sophisticated architectures
-2. **Performance & Scale Impact** - Measurable improvements, optimization results, capacity enhancements  
+2. **Performance & Scale Impact** - Measurable improvements, optimization results, capacity enhancements
 3. **Business & User Value** - Real-world problem solving, feature impact, user experience improvements
 4. **Engineering Excellence** - Code quality, maintainability, testing, documentation, DevOps practices
 5. Make sure that if job description is provided, the bullet points are tailored to align with the job requirements.
@@ -138,7 +138,8 @@ def get_client_factories() -> List[APIClientFactory]:
         logger.info(f"Primary AI provider '{PRIMARY_PROVIDER}' initialized.")
     else:
         logger.error(
-            f"Primary AI provider '{PRIMARY_PROVIDER}' could not be initialized. Check API key environment variables.")
+            f"Primary AI provider '{PRIMARY_PROVIDER}' could not be initialized. Check API key environment variables."
+        )
 
     return factories
 
@@ -151,20 +152,22 @@ async def _emit_ws_message(websocket: Optional[WebSocket], msg_type: str, conten
     if not websocket or websocket.client_state != WebSocketState.CONNECTED:
         return
     try:
-        message = {
-            "type": msg_type,
-            "content": content,
-            "generation_id": generation_id
-        }
+        message = {"type": msg_type, "content": content, "generation_id": generation_id}
         await websocket.send_json(message)
     except Exception as e:
         logger.warning(f"WebSocket send error: {e}")
 
 
-def _build_prompt(gitingest_summary: str, gitingest_tree: str, gitingest_content: str,
-                  job_description: Optional[str]) -> str:
+def _build_prompt(
+    gitingest_summary: str,
+    gitingest_tree: str,
+    gitingest_content: str,
+    job_description: Optional[str],
+) -> str:
     """Constructs the final prompt for the AI model."""
-    job_desc_text = f"The user is applying for a job with this description: {job_description.strip()}" if job_description else "N/A"
+    job_desc_text = (
+        f"The user is applying for a job with this description: {job_description.strip()}" if job_description else "N/A"
+    )
     return RESUME_PROMPT_TEMPLATE.format(
         job_description=job_desc_text,
         gitingest_summary=gitingest_summary,
@@ -179,18 +182,20 @@ async def _generate_and_parse_response(prompt: str) -> Dict[str, Any]:
 
     async def operation(client):
         """Defines the specific API call for the AI model."""
-        provider = client.__class__.__module__.split('.')[0]
-        if provider == 'google':  # Gemini
+        provider = client.__class__.__module__.split(".")[0]
+        if provider == "google":  # Gemini
             response = await client.generate_content_async(prompt)
             yield response.text
         else:  # OpenAI, Groq, Anthropic (Claude) like
             # This simplified structure works for OpenAI, Groq, and Claude v2 messages
-            if provider == 'anthropic':
+            if provider == "anthropic":
                 messages = [{"role": "user", "content": prompt}]
                 max_tokens = 4096
                 response = await client.messages.create(
-                    model=os.getenv("CLAUDE_MODEL_VERSION", "claude-3-opus-20240229"), messages=messages,
-                    max_tokens=max_tokens)
+                    model=os.getenv("CLAUDE_MODEL_VERSION", "claude-3-opus-20240229"),
+                    messages=messages,
+                    max_tokens=max_tokens,
+                )
                 yield response.content[0].text
             else:
                 model_map = {"openai": "gpt-4-turbo", "groq": "llama3-70b-8192"}
@@ -198,7 +203,7 @@ async def _generate_and_parse_response(prompt: str) -> Dict[str, Any]:
                     model=model_map.get(provider, "default-model"),
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.1,
-                    response_format={"type": "json_object"}
+                    response_format={"type": "json_object"},
                 )
                 yield response.choices[0].message.content
 
@@ -210,24 +215,25 @@ async def _generate_and_parse_response(prompt: str) -> Dict[str, Any]:
     try:
         json_str = full_response_text.strip()
         # Find the JSON block within ```json ... ```
-        match = re.search(r'```json\s*(\{.*?\})\s*```', json_str, re.DOTALL)
+        match = re.search(r"```json\s*(\{.*?\})\s*```", json_str, re.DOTALL)
         if match:
             json_str = match.group(1)
         return json.loads(json_str)
     except json.JSONDecodeError as e:
         logger.error(
-            f"Failed to decode JSON from AI response. Error: {e}. Response text: '{full_response_text[:500]}...'")
+            f"Failed to decode JSON from AI response. Error: {e}. Response text: '{full_response_text[:500]}...'"
+        )
         raise ValueError("AI response was not valid JSON.") from e
 
 
 async def create_resume_tool(
-        gitingest_summary: str,
-        gitingest_tree: str,
-        gitingest_content: str,
-        generation_id: str,
-        project_name: Optional[str] = None,
-        job_description: Optional[str] = None,
-        websocket: Optional[WebSocket] = None,
+    gitingest_summary: str,
+    gitingest_tree: str,
+    gitingest_content: str,
+    generation_id: str,
+    project_name: Optional[str] = None,
+    job_description: Optional[str] = None,
+    websocket: Optional[WebSocket] = None,
 ) -> Dict[str, Any]:
     """
     Main tool to generate a resume section from repository analysis.
@@ -253,7 +259,7 @@ async def create_resume_tool(
 
         if job_description:
             # Normalize whitespace: replace multiple spaces/newlines/tabs with a single space
-            job_description = re.sub(r'\s+', ' ', job_description.strip())
+            job_description = re.sub(r"\s+", " ", job_description.strip())
 
             # Trim to max allowed length, optionally add ellipsis if content was cut
             if len(job_description) > max_job_desc_chars:

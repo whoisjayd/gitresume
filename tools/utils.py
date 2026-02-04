@@ -71,7 +71,7 @@ def robust_rmtree(path: str, max_retries: int = 3, delay_secs: float = 1.0) -> N
                 f"Error: {e.__class__.__name__}: {e}"
             )
             if attempt < max_retries - 1:
-                sleep_time = delay_secs * (2 ** attempt)
+                sleep_time = delay_secs * (2**attempt)
                 logger.info(f"Retrying in {sleep_time:.2f} seconds...")
                 time.sleep(sleep_time)
 
