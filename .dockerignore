@@ -15,3 +15,5 @@ venv
 sessions/
 app.log
 *.log
+*.md
+*.yaml
