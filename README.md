@@ -1,301 +1,223 @@
-# 🚀 GitResume
+# GitResume
 
-> **⚠️ NOTICE: This project is no longer maintained or deployed due to lack of financial support.**  
-> The live service at gitresume.live is not available. You can still fork and self-host this project for your own use.
+Self-hostable FastAPI + Vite application that turns GitHub repositories into resume-ready project summaries, ATS-friendly bullet points, interview prep, and exportable plain-text/LaTeX snippets using LiteLLM-compatible AI providers.
 
-*Transform your GitHub repositories into professional, ATS-optimized resumes using AI.*
+## Highlights
 
-<div align="center">
-  <a href="https://res.cloudinary.com/dx9ctc074/video/upload/v1750616473/xir6vohwthjuybosq3wh.mp4">
-    <img src="https://res.cloudinary.com/dx9ctc074/image/upload/v1750616723/tqldkfra21junhhuycoq.gif" alt="GitResume Demo" width="100%"/>
-  </a>
-</div>
+- **Modern self-hosting stack:** FastAPI backend in `src/gitresume`, Vite React frontend in `frontend`, Redis-backed jobs/events, and Docker Compose deployment.
+- **Repository intelligence:** Secure clone/checkout, Repomix-powered packing, ranked context selection, tree-sitter analysis, dependency summaries, git-history signals, and gitingest fallback.
+- **Async generation flow:** Taskiq worker executes long-running analysis/generation while the frontend follows progress over Server-Sent Events.
+- **Provider-flexible AI:** Configure Gemini, OpenAI, Anthropic, Groq, or any LiteLLM-supported provider via environment variables.
+- **OSS-friendly:** No checked-in secrets, uv lockfile for backend reproducibility, npm lockfile for frontend reproducibility, and containerized local production stack.
 
+## Architecture
 
-<div align="center">
-
-[![Live](https://img.shields.io/badge/Live-gitresume.live-brightgreen?logo=google-chrome)](https://gitresume.live)
-[![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/downloads/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.111.0-green.svg)](https://fastapi.tiangolo.com/)
-[![Docker](https://img.shields.io/badge/Docker-20.10-blue.svg)](https://www.docker.com/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://choosealicense.com/licenses/mit/)
-[![GitHub Issues](https://img.shields.io/github/issues/whoisjayd/gitresume)](https://github.com/whoisjayd/gitresume/issues)
-[![GitHub Stars](https://img.shields.io/github/stars/whoisjayd/gitresume)](https://github.com/whoisjayd/gitresume/stargazers)
-[![Contributions Welcome](https://img.shields.io/badge/Contributions-Welcome-brightgreen.svg)](https://github.com/whoisjayd/gitresume)
-![visitor badge](https://visitor-badge.laobi.icu/badge?page_id=https://github.com/WhoIsJayD/gitresume)
-
-
-</div>
-
-## 🌐 Live Demo
-
-~~Try GitResume now: [gitresume.live](https://gitresume.live)~~  
-**Note:** The live demo is no longer available. Please use the self-hosted installation instructions below.
-
-
-## 📝 Overview
-
-**GitResume** is a production-ready FastAPI web app that uses AI to turn your GitHub repositories into polished, ATS-friendly resume content. It analyzes your codebase, extracts technical achievements, and generates impactful resume sections. Designed for engineers at all levels, GitResume supports multiple AI providers and is fully containerized for easy deployment.
-
-
-
-## 🎯 What Can GitResume Do?
-
-Transform this:
-
-> A repo with FastAPI backend, Redis caching, and Docker deployment.
-
-Into:
-
-- Developed scalable backend using FastAPI and Redis for caching.
-- Implemented CI/CD with Docker and GitHub Actions.
-- Designed microservices structure for modular development.
-
-
-## 💼 Who Should Use GitResume?
-
-- 🧑‍🎓 **Students:** Turn class projects into resume-ready experience.
-- 👩‍💻 **Developers:** Showcase contributions with tailored resume bullets.
-- 🧑‍💼 **Job Seekers:** Get ATS-optimized content in minutes.
-- 👥 **Recruiters:** Generate summaries from candidate GitHub links.
-
-
-## ✨ Features
-
-- **AI-Powered Resume Creation:** Converts GitHub repositories into ATS-friendly resumes.
-- **Smart Code Parsing:** Uses tree-sitter to extract tech stack, structure, and key contributions.
-- **Customizable Output:** Tailor resumes to specific job descriptions and formats.
-- **Secure & Scalable:** GitHub OAuth, rate limiting, Redis support, and production-ready Docker setup.
-
-
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- **Python 3.11** (for local development)
-- **Docker** (recommended for production)
-- **Git** (for cloning repositories)
-- **Redis** (optional, for rate limiting and session management)
-- **API Keys:**
-    - GitHub OAuth (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_TOKEN`)
-    - AI Providers (Gemini, OpenAI, Groq, Claude)
-
-### Local Installation
-
-1. **Clone the Repository:**
-   ```bash
-   git clone https://github.com/whoisjayd/gitresume.git
-   cd gitresume
-   ```
-2. **Set Up Virtual Environment:**
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-3. **Install Dependencies:**
-   ```bash
-   pip install --upgrade pip
-   pip install -r requirements.txt
-   ```
-4. **Configure Environment Variables:**
-    - Copy `.env.example` to `.env` and fill in your API keys and secrets.
-    - Or use `env.yaml` for configuration.
-5. **Run the Application:**
-   ```bash
-   uvicorn app:app --host 0.0.0.0 --port 8080
-   ```
-   Access at [http://localhost:8080](http://localhost:8080).
-
-### Docker Deployment
-
-1. **Build the Docker Image:**
-   ```bash
-   docker build -t gitresume .
-   ```
-2. **Run the Container:**
-   ```bash
-   docker run --env-file .env -p 8080:8080 gitresume
-   ```
-   Or mount `env.yaml`:
-   ```bash
-   docker run -v $(pwd)/env.yaml:/app/env.yaml -p 8080:8080 gitresume
-   ```
-
-
-## 🛠 Tech Stack
-
-| Component            | Technology                                         |
-|----------------------|---------------------------------------------------|
-| **Backend**          | Python 3.11, FastAPI, Starlette, Pydantic, SlowAPI|
-| **Frontend**         | Jinja2 Templates, Tailwind CSS (CDN)              |
-| **AI Providers**     | Gemini, OpenAI, Groq, Claude                      |
-| **Caching**          | Redis (optional)                                  |
-| **Containerization** | Docker, Uvicorn                                   |
-| **Code Parsing**     | Tree-sitter                                       |
-
-
-
-## 🔧 Configuration
-
-- **Environment Variables:**
-    - Copy `.env.example` to `.env` or create `env.yaml`.
-    - Key variables include:
-        - `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_TOKEN`
-        - `REDIS_HOST`, `REDIS_PORT`, `REDIS_USERNAME`, `REDIS_PASSWORD`
-        - `AI_PROVIDER` (gemini, openai, groq, claude)
-        - API keys for AI providers
-        - `SESSION_SECRET_KEY`, `CALLBACK_URL`, `ENVIRONMENT`
-    - Both `.env` and `env.yaml` are supported for local and Docker setups.
-- **Example `.env`:**
-  ```env
-  GITHUB_CLIENT_ID=your_client_id
-  GITHUB_CLIENT_SECRET=your_client_secret
-  AI_PROVIDER=gemini
-  GEMINI_API_KEY=your_gemini_key
-  ENVIRONMENT=production
-  ```
-
-
-
-## 📄 Resume Output
-
-GitResume generates structured JSON output optimized for ATS systems and easy integration into resume templates. The schema includes:
-
-- `project_title`: Project name (string)
-- `tech_stack`: List of technologies used (array)
-- `bullet_points`: 4-6 concise achievement statements (array)
-- `additional_notes`: Unique technical setup, deployment strategies, or noteworthy engineering decisions (string)
-- `future_plans`: Logical next features or enhancements (string)
-- `potential_advancements`: Advanced architectural improvements or optimizations (string)
-- `interview_questions`: Array of objects with question, answer, and category
-
-**Example Output:**
-```json
-{
-  "project_title": "E-Commerce Platform",
-  "tech_stack": ["Python", "Redis"],
-  "bullet_points": [
-    "Developed scalable backend using FastAPI and Redis for caching.",
-    "Integrated secure payment gateway and OAuth authentication.",
-    "Implemented CI/CD pipeline with Docker and GitHub Actions.",
-    "Optimized database queries, reducing latency by 30%."
-  ],
-  "additional_notes": "Designed modular microservices architecture for rapid feature deployment.",
-  "future_plans": "Add automated testing and expand API documentation.",
-  "potential_advancements": "Utilize event-driven design with message queues for order processing.",
-  "interview_questions": [
-    {
-      "question": "How did you ensure scalability in the backend?",
-      "answer": "By leveraging FastAPI's async capabilities and Redis for caching.",
-      "category": "Backend Architecture"
-    }
-  ]
-}
+```text
+frontend/ (Vite React SPA)
+    │  /api proxy in development or nginx in Docker
+    ▼
+src/gitresume/main.py (FastAPI API)
+    │  enqueue generation + stream status
+    ▼
+Redis (state, token handoff, event stream, Taskiq broker)
+    │
+    ▼
+Taskiq worker (clone repo, analyze, call LiteLLM, persist result)
 ```
 
+## Tech Stack
 
+| Area | Technology |
+| --- | --- |
+| Backend | Python 3.11/3.12, FastAPI, Pydantic, Redis, Taskiq, SSE |
+| Frontend | React 19, TypeScript, Vite 8 |
+| AI | LiteLLM with Gemini/OpenAI/Anthropic/Groq-compatible keys |
+| Repository analysis | git, Repomix via `npx repomix@1.14.0`, tree-sitter-analyzer, gitingest, NetworkX, tiktoken |
+| Packaging | uv + `uv.lock`, npm + `package-lock.json` |
+| Deployment | Docker, Docker Compose, nginx static frontend |
 
-## ❓ FAQ
+## Prerequisites
 
-- **Is my GitHub data stored?**  
-  No, repositories are cloned temporarily and deleted after analysis.
-- **Which AI models are supported?**  
-  Gemini, OpenAI, Groq, and Claude—configurable via `.env`.
-- **Can I analyze private repositories?**  
-  Yes, after authenticating via GitHub OAuth.
-- **How do I deploy in production?**  
-  Use the provided Docker setup with environment variables configured.
-- **How do I report bugs or suggest features?**  
-  Open an issue on [GitHub Issues](https://github.com/whoisjayd/gitresume/issues).
-- **How do I contribute?**  
-  See the [Contributing](#contributing) section below.
+### Docker self-hosting
 
+- Docker with Compose v2
+- Provider API key for the `AI_MODEL` you choose
+- Optional GitHub OAuth app credentials for private repositories
 
+### Local development
 
-## 🤝 Contributing
+- Python 3.11 or 3.12
+- [uv](https://docs.astral.sh/uv/)
+- Node.js 24+ and npm
+- Redis 7+
+- git
 
-We welcome contributions! To get started:
+## Quick Start with Docker Compose
 
-1. Fork and clone the repository.
-2. Create a feature branch: `git checkout -b feature/your-feature`.
-3. Implement and test your changes locally.
-4. Push to your fork and submit a pull request.
+1. Copy and edit environment variables:
 
-**Guidelines:**
+   ```bash
+   cp .env.example .env
+   ```
 
-- Follow PEP 8 for Python code.
-- Include tests for new features (use pytest).
-- Update documentation as needed.
-- Be respectful and inclusive (see [Code of Conduct](CODE_OF_CONDUCT.md)).
+2. Set at least:
 
+   ```env
+   SESSION_SECRET_KEY=replace-with-a-long-random-secret
+   AI_MODEL=gemini/gemini-1.5-flash
+   GEMINI_API_KEY=...
+   ```
 
+   For private repository access, also set `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, and/or `GITHUB_TOKEN`.
 
-## 📜 License
+3. Start the stack:
+
+   ```bash
+   docker compose up --build
+   ```
+
+4. Open the frontend at <http://localhost:5173>.
+
+Services:
+
+- Frontend: <http://localhost:5173>
+- API: <http://localhost:8080>
+- Health: <http://localhost:8080/api/health>
+- Redis: internal Compose network only
+
+## Local Development
+
+### Backend
+
+```bash
+uv sync
+cp .env.example .env
+# For host-run backend/worker processes, use the host-mapped Redis address.
+# Docker Compose keeps REDIS_URL=redis://redis:6379/0 for in-network services.
+python -c "from pathlib import Path; p=Path('.env'); p.write_text(p.read_text().replace('REDIS_URL=redis://redis:6379/0','REDIS_URL=redis://localhost:6379/0'))"
+uv run uvicorn gitresume.main:app --host 0.0.0.0 --port 8080 --reload
+```
+
+The backend expects Redis at `REDIS_URL`; for local development you can run:
+
+```bash
+docker run --rm -p 6379:6379 redis:7-alpine
+```
+
+### Worker
+
+Run the worker in a second terminal:
+
+```bash
+uv run taskiq worker gitresume.workers.broker:broker gitresume.workers.generation_tasks
+```
+
+### Frontend
+
+```bash
+npm --prefix frontend install
+npm --prefix frontend run dev
+```
+
+The Vite dev server proxies `/api` to `http://localhost:8080` by default. Override with `VITE_API_PROXY_TARGET` if needed.
+
+## Configuration
+
+Copy `.env.example` to `.env`. Key settings:
+
+| Variable | Purpose |
+| --- | --- |
+| `ENVIRONMENT` | Runtime environment label, usually `production` in Docker |
+| `SESSION_SECRET_KEY` | Required session signing secret |
+| `FRONTEND_ORIGIN` | Allowed browser origin for CORS |
+| `ALLOWED_HOSTS` | Trusted host middleware allow-list |
+| `REDIS_URL` | Redis URL for state, events, and broker |
+| `CALLBACK_URL` | GitHub OAuth callback URL |
+| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | Optional GitHub OAuth app credentials |
+| `GITHUB_TOKEN` | Optional token for repository access/rate limits |
+| `AI_MODEL` | LiteLLM model name, e.g. `gemini/gemini-1.5-flash` |
+| `LITELLM_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY` | Provider credentials |
+| `MAX_REPO_SIZE_MB`, `MAX_REPO_FILES` | Repository safety limits |
+| `GENERATION_TTL_SECONDS`, `GENERATION_EVENT_MAX_LEN` | Redis state/event retention limits |
+
+Never commit `.env` or provider secrets.
+
+## API Endpoints
+
+| Endpoint | Method | Description |
+| --- | --- | --- |
+| `/api/health` | GET | Health check |
+| `/api/session` | GET | Current GitHub session status |
+| `/api/session/login` | GET | Start GitHub OAuth flow |
+| `/api/session/callback` | GET | Complete GitHub OAuth flow |
+| `/api/session/logout` | POST | Clear session |
+| `/api/repositories/validate` | GET | Validate repository URL/access |
+| `/api/generations` | POST | Start resume generation |
+| `/api/generations/{generation_id}` | GET | Fetch generation status/result |
+| `/api/generations/{generation_id}/events` | GET | Stream generation events with SSE |
+
+## Resume Output
+
+Generation results include:
+
+- `project_title`
+- `tech_stack`
+- `bullet_points`
+- `additional_notes`
+- `future_plans`
+- `potential_advancements`
+- `interview_questions`
+
+The frontend can copy the output as plain text or LaTeX.
+
+## Verification
+
+Useful commands:
+
+```bash
+uv run pytest -q
+uv run ruff check src tests
+npm --prefix frontend run test:run
+npm --prefix frontend run build
+docker compose config
+docker build --target runtime -t gitresume-api:test .
+docker build -t gitresume-frontend:test frontend
+```
+
+Equivalent Make targets are provided for common checks:
+
+```bash
+make test
+make frontend-test
+make frontend-build
+make docker-config
+make docker-build
+```
+
+## Repository Layout
+
+```text
+src/gitresume/              FastAPI app, API routes, services, workers, schemas
+frontend/                   Vite React SPA and nginx container config
+tests/                      Backend/service/deployment tests
+Dockerfile                  uv-based backend/worker image
+frontend/Dockerfile         Vite build + nginx static image
+docker-compose.yml          api + worker + frontend + redis stack
+.env.example                Self-hosting environment template
+pyproject.toml / uv.lock    Backend package metadata and lockfile
+```
+
+## Security and Privacy
+
+- Repositories are cloned into temporary worker directories for analysis.
+- GitHub tokens are not sent through Taskiq payloads; worker token handoff uses Redis and one-time retrieval.
+- Private clone operations use `GIT_ASKPASS` instead of embedding tokens in git command arguments.
+- Docker build contexts ignore `.env`, local caches, virtualenvs, `.git`, and generated frontend artifacts.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Please include tests for behavior changes and run the verification commands relevant to your change before opening a PR.
+
+## License
 
 This project is licensed under the [MIT License](LICENSE).
-
-
-
-## 🙌 Acknowledgments
-
-- **Core Technologies:** [Python](https://www.python.org/), [FastAPI](https://fastapi.tiangolo.com/), [Tree-sitter](https://tree-sitter.github.io/), [Jinja2](https://jinja.palletsprojects.com/), [Tailwind CSS](https://tailwindcss.com/), [Redis](https://redis.io/), [Uvicorn](https://www.uvicorn.org/), [Docker](https://www.docker.com/)
-- **AI Providers:** [Google Gemini](https://cloud.google.com/generative-ai), [OpenAI](https://openai.com/), [Groq](https://groq.com/), [Anthropic Claude](https://www.anthropic.com/)
-
-
-
-## 🏗 Architecture Overview
-
-GitResume uses a modular, scalable architecture:
-
-- **Frontend:** Jinja2 templates styled with Tailwind CSS, served by FastAPI.
-- **Backend:** FastAPI handles routing, API endpoints, and WebSocket connections.
-- **Authentication:** GitHub OAuth for secure access to public and private repos.
-- **Code Analysis:** Tree-sitter parses codebases for structure and technology insights.
-- **AI Integration:** Modular support for Gemini, OpenAI, Groq, and Claude.
-- **Caching & Rate Limiting:** Redis (optional) for session management and performance.
-- **Deployment:** Docker with multi-stage builds for minimal, secure images.
-
-
-
-## 🔗 API Endpoints
-
-| Endpoint         | Method   | Description                     |
-|------------------|----------|---------------------------------|
-| /                | GET      | Home page                       |
-| /                | POST     | Generate resume from repo URL   |
-| /login           | GET      | Initiate GitHub OAuth           |
-| /callback        | GET      | Handle OAuth callback           |
-| /logout          | GET      | Log out                         |
-| /health          | GET      | Health check endpoint           |
-| /{user}/{repo}   | GET/POST | Dynamic repo analysis           |
-| /ws/             | WS       | WebSocket for real-time updates |
-
-
-
-## 📦 Module Breakdown
-
-| Module                    | Purpose                                      |
-|---------------------------|----------------------------------------------|
-| app.py                    | Core FastAPI app with routing and middleware |
-| tools/create_resume.py    | Orchestrates AI resume generation            |
-| tools/git_operations.py   | Manages repo cloning and validation          |
-| tools/gitingest.py        | Parses and summarizes codebases              |
-| tools/grammar_check.py    | Ensures high-quality AI text output          |
-| tools/api_utils.py        | Integrates with AI provider APIs             |
-| tools/utils.py            | General utility functions                    |
-
-
-## 🌟 Why GitResume?
-
-- **No More Blank Pages:** Start your resume with content generated from real code.
-- **Designed for Engineers:** Resume bullets highlight your actual skills and impact.
-- **Recruiter-Ready:** Outputs are optimized for ATS and easy formatting.
-- **Plug-and-Play:** Works with public and private repos, supports multiple AI providers, and Docker.
-- **Open Source:** Built for the community—contributions welcome!
-
-
-## 📬 Contact
-
-Created with ❤ by [Jaydeep Solanki](https://github.com/whoisjayd).  
-Questions or feedback? Reach out via [GitHub Issues](https://github.com/whoisjayd/gitresume/issues).
