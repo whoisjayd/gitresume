@@ -1,0 +1,38 @@
+---
+title: Deployment
+description: Deploy GitResume with Docker Compose, uv, npm, Redis, and provider environment variables.
+---
+
+# Deployment
+
+The repository includes Dockerfiles for the backend/worker runtime and the frontend static nginx image, plus `docker-compose.yml` for the API, worker, frontend, and Redis services.
+
+## Required services
+
+- FastAPI API from `src/gitresume/main.py`.
+- Taskiq worker using `gitresume.workers.broker:broker` and `gitresume.workers.generation_tasks`.
+- Redis for state, events, token handoff, settings, and the Taskiq broker.
+- Vite frontend served by nginx in the frontend container.
+
+## Important environment variables
+
+- `APP_MODE=self_hosted|hosted`
+- `SESSION_SECRET_KEY`
+- `FRONTEND_ORIGIN`
+- `ALLOWED_HOSTS`
+- `REDIS_URL`
+- `AI_MODEL`
+- Provider keys such as `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, or `LITELLM_API_KEY`
+- Optional `ALLOW_SAVED_BYOK` and `SETTINGS_ENCRYPTION_KEY`
+- Optional GitHub OAuth values for hosted mode or private repository access
+
+## Verification
+
+Run targeted deployment checks before publishing images:
+
+```bash
+uv run pytest tests/test_deployment_files.py -q
+npm --prefix frontend run build
+uv run ruff check src tests
+docker compose config
+```

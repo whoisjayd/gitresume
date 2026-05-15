@@ -1,0 +1,70 @@
+---
+title: Quickstart
+description: Run GitResume locally with Docker Compose or separate backend, worker, frontend, and Redis processes.
+---
+
+# Quickstart
+
+## Docker Compose
+
+1. Copy the environment template:
+
+```bash
+cp .env.example .env
+```
+
+2. Set at least these values in `.env`:
+
+```env
+SESSION_SECRET_KEY=replace-with-a-long-random-secret
+AI_MODEL=gemini/gemini-1.5-flash
+GEMINI_API_KEY=<provider key>
+```
+
+3. Start the stack:
+
+```bash
+docker compose up --build
+```
+
+4. Open `http://localhost:5173`.
+
+Docker Compose runs the API, worker, frontend, and Redis. The frontend serves the Vite build through nginx and proxies `/api` to the API container.
+
+## Local development
+
+Run Redis first:
+
+```bash
+docker run --rm -p 6379:6379 redis:7-alpine
+```
+
+Install backend dependencies and start FastAPI:
+
+```bash
+uv sync
+cp .env.example .env
+python -c "from pathlib import Path; p=Path('.env'); s=p.read_text(); s=s.replace('ENVIRONMENT=production','ENVIRONMENT=development'); s=s.replace('REDIS_URL=redis://redis:6379/0','REDIS_URL=redis://localhost:6379/0'); p.write_text(s)"
+uv run uvicorn gitresume.main:app --host 0.0.0.0 --port 8080 --reload
+```
+
+Start the worker in another terminal:
+
+```bash
+uv run taskiq worker gitresume.workers.broker:broker gitresume.workers.generation_tasks
+```
+
+Start the frontend:
+
+```bash
+npm --prefix frontend install
+npm --prefix frontend run dev
+```
+
+## Verify a checkout
+
+```bash
+uv run pytest tests/test_deployment_files.py -q
+npm --prefix frontend run build
+uv run ruff check src tests
+```

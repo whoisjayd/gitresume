@@ -1,0 +1,29 @@
+---
+title: Self-hosted mode
+description: Run GitResume with global dashboard settings and server-owned provider configuration.
+---
+
+# Self-hosted mode
+
+Self-hosted mode is the default:
+
+```env
+APP_MODE=self_hosted
+```
+
+In this mode, dashboard settings use a global scope. This is intended for single-team or private deployments where the operator controls server configuration and access.
+
+## Global settings
+
+The dashboard reads and updates global settings through:
+
+- `GET /api/settings`
+- `PUT /api/settings/default-model`
+- `POST /api/settings/provider-keys`
+- `DELETE /api/settings/provider-keys/{key_id}`
+
+Saved BYOK still requires `ALLOW_SAVED_BYOK=true`, `SETTINGS_ENCRYPTION_KEY`, and Redis. If saved BYOK is disabled or encryption is missing, `GET /api/settings` returns a disabled status instead of crashing.
+
+## Provider defaults
+
+The worker falls back to server environment variables such as `AI_MODEL`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, or `LITELLM_API_KEY` when no saved or ephemeral key is selected.

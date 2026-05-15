@@ -1,0 +1,37 @@
+---
+title: BYOK
+description: Configure ephemeral and saved bring-your-own-key provider credentials for GitResume generations.
+---
+
+# Bring your own key (BYOK)
+
+GitResume supports two BYOK paths: ephemeral per-generation keys and opt-in saved provider keys.
+
+## Ephemeral provider keys
+
+Each `POST /api/generations` request can include `providerApiKey` for ephemeral BYOK per generation. The API stores that secret one-time in Redis for the worker and does not include it in the Taskiq payload, SSE stream, generation state response, or retry state.
+
+## Saved provider keys
+
+Saved BYOK is disabled by default. Enable it with:
+
+```env
+ALLOW_SAVED_BYOK=true
+SETTINGS_ENCRYPTION_KEY=<fernet key or long passphrase>
+```
+
+A generated Fernet key is preferred:
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Long passphrases are accepted as a compatibility fallback and are normalized with SHA-256 plus URL-safe base64 before Fernet use.
+
+## Behavior when disabled
+
+If saved BYOK is disabled, Redis is unavailable, or encryption is missing, `GET /api/settings` returns a disabled status and reason. This keeps the dashboard usable without saved-key persistence.
+
+## Rotation and metadata
+
+Saved key metadata is returned to the dashboard, but encrypted secrets are never returned. When multiple compatible saved keys exist for a provider/model, the worker rotates them round-robin using Redis counters.

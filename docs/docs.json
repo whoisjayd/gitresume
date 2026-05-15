@@ -1,0 +1,44 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "GitResume",
+  "colors": {
+    "primary": "#2563eb",
+    "light": "#3b82f6",
+    "dark": "#1d4ed8"
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "Start",
+        "pages": [
+          "overview.mdx",
+          "quickstart.mdx"
+        ]
+      },
+      {
+        "group": "App modes",
+        "pages": [
+          "hosted.mdx",
+          "self-hosted.mdx",
+          "dashboard.mdx"
+        ]
+      },
+      {
+        "group": "AI providers",
+        "pages": [
+          "byok.mdx",
+          "models.mdx",
+          "oauth-providers.mdx"
+        ]
+      },
+      {
+        "group": "Operate",
+        "pages": [
+          "deployment.mdx",
+          "security.mdx"
+        ]
+      }
+    ]
+  }
+}

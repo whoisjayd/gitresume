@@ -1,0 +1,35 @@
+---
+title: Hosted mode
+description: Configure APP_MODE=hosted for a deployment where GitHub login scopes saved dashboard settings by user.
+---
+
+# Hosted mode
+
+Set hosted mode with:
+
+```env
+APP_MODE=hosted
+```
+
+Hosted mode uses GitHub login for saved BYOK dashboard settings. Anonymous users can still see the app shell, but saved provider-key management requires a session.
+
+## GitHub session endpoints
+
+- `GET /api/session` returns session status, app mode, and whether login is required.
+- `GET /api/session/login?next=/dashboard` starts GitHub OAuth and stores a safe post-login redirect.
+- `GET /api/session/callback` completes GitHub OAuth.
+- `POST /api/session/logout` clears the session.
+
+Configure OAuth with:
+
+```env
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+CALLBACK_URL=http://localhost:5173/api/session/callback
+```
+
+The hosted URL is deployment-specific. It can be wired to the same FastAPI + Vite app and should use the deployment's public origin and callback URL.
+
+## Saved BYOK scope
+
+In hosted mode, hosted saved keys require GitHub login and are scoped to the authenticated GitHub user id. `GET /api/settings` reports `loginRequired` when an anonymous hosted user tries to manage saved keys, and requests that attempt to use saved provider keys without login receive a login-required response.

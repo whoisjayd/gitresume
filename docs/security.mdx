@@ -1,0 +1,34 @@
+---
+title: Security
+description: How GitResume handles secrets, sessions, repository checkout, Redis state, and safe failure messages.
+---
+
+# Security
+
+GitResume is designed to keep provider secrets and GitHub tokens out of task payloads, SSE events, and API responses.
+
+## Secret handling
+
+- `.env` is ignored and must not be committed.
+- GitHub tokens are handed to workers through Redis one-time storage rather than Taskiq payloads.
+- Ephemeral `providerApiKey` values are stored one-time in Redis and popped by the worker.
+- Saved BYOK secrets are encrypted at rest with `SETTINGS_ENCRYPTION_KEY` and are never returned to the dashboard.
+- Saved key responses contain metadata only: id, provider, label, optional model, timestamps, and active state.
+
+## Session cookies
+
+The app exposes cookie controls through:
+
+- `SESSION_COOKIE_HTTPS_ONLY`
+- `SESSION_COOKIE_SAME_SITE`
+- `SESSION_COOKIE_MAX_AGE_SECONDS`
+
+When `SESSION_COOKIE_HTTPS_ONLY` is unset, production mode uses HTTPS-only cookies.
+
+## Worker failures
+
+Worker code emits generic public failure messages and safe logs. Secrets are not included in task payloads, SSE responses, API responses, or frontend retry state.
+
+## Repository access
+
+Private clone operations use safe token handoff and avoid embedding tokens in git command arguments. Repository processing limits are controlled by `MAX_REPO_SIZE_MB` and `MAX_REPO_FILES`.

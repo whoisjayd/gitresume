@@ -1,0 +1,41 @@
+---
+title: Overview
+description: GitResume turns repositories into resume-ready project narratives with a FastAPI, Vite, Redis, and LiteLLM stack.
+---
+
+# GitResume overview
+
+GitResume is a self-hostable FastAPI + Vite dashboard for converting GitHub repositories into resume-ready project summaries, ATS-friendly bullet points, interview prep, and copyable plain-text or LaTeX snippets.
+
+The current application is a dashboard platform rather than a single script. The frontend links to `/docs` and the public repository at `https://github.com/WhoIsJayD/gitresume`, while the API runs under `/api`.
+
+## Runtime architecture
+
+```text
+frontend/ Vite React SPA
+  -> /api through Vite proxy or nginx
+src/gitresume/main.py FastAPI API
+  -> Redis for state, sessions, events, token handoff, and Taskiq broker
+Taskiq worker
+  -> clone repository, analyze context, call LiteLLM, persist generation result
+```
+
+## What the dashboard does
+
+- Validates repository access before generation.
+- Lets users choose available LiteLLM text/chat models.
+- Streams generation progress with Server-Sent Events from `/api/generations/{generation_id}/events`.
+- Supports saved BYOK provider keys when enabled and encrypted.
+- Supports ephemeral provider keys per generation without storing them in API payloads or SSE responses.
+
+## Main docs
+
+- [Quickstart](quickstart)
+- [Hosted mode](hosted)
+- [Self-hosted mode](self-hosted)
+- [Dashboard](dashboard)
+- [BYOK](byok)
+- [Model catalog](models)
+- [OAuth providers](oauth-providers)
+- [Deployment](deployment)
+- [Security](security)

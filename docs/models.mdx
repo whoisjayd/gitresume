@@ -1,0 +1,20 @@
+---
+title: Model catalog
+description: Understand how GitResume exposes LiteLLM text models and unavailable OAuth/responses entries.
+---
+
+# Model catalog
+
+`GET /api/models` returns a LiteLLM-derived catalog of text-capable models. The response includes each model id, provider, mode, display name, auth type, OAuth support flag, API-key requirement, availability flag, status, and context window when known.
+
+## Selectable models
+
+Available chat and completion models can be selected in the dashboard and sent with `/api/generations`. The settings API rejects unknown models and models marked unavailable.
+
+## Responses models
+
+LiteLLM entries with `responses` mode are listed for visibility, but they are marked unavailable because Responses API execution is not implemented in the worker yet.
+
+## OAuth catalog entries
+
+The catalog includes visible but unavailable OAuth entries such as GitHub Copilot and ChatGPT Codex models. They show status text, are not selectable for generation, and remain unavailable until OAuth execution is implemented.

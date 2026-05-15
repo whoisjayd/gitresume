@@ -1,0 +1,23 @@
+---
+title: OAuth providers
+description: Separate implemented GitHub login from future OAuth model execution flows.
+---
+
+# OAuth providers
+
+GitResume currently implements GitHub OAuth for user sessions, not for model execution.
+
+## Implemented today: GitHub login
+
+GitHub login powers hosted-mode dashboard identity and saved BYOK scoping:
+
+- `GET /api/session`
+- `GET /api/session/login?next=/dashboard`
+- `GET /api/session/callback`
+- `POST /api/session/logout`
+
+The OAuth app must provide `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, and `CALLBACK_URL`.
+
+## Visible but unavailable: OAuth models
+
+The model catalog includes visible but unavailable OAuth/responses entries such as GitHub Copilot and ChatGPT Codex. These entries are intentionally visible with status text so the dashboard can explain future connection paths, but they are not selectable for generation until OAuth model execution is implemented.

@@ -1,0 +1,26 @@
+---
+title: Dashboard
+description: The GitResume dashboard combines generation, model selection, session state, settings, and progress streaming.
+---
+
+# Dashboard
+
+The React dashboard is the main GitResume interface. It exposes generation controls, current app mode, GitHub session state, model catalog data, saved BYOK metadata, and streaming progress.
+
+## API endpoints used by the dashboard
+
+- `GET /api/models` lists LiteLLM text/chat/responses entries.
+- `GET /api/settings` returns app mode, saved BYOK availability, default model, saved-key metadata, and disabled reason when applicable.
+- `PUT /api/settings/default-model` stores the selected default model when saved settings are enabled.
+- `POST /api/settings/provider-keys` saves encrypted provider keys.
+- `POST /api/generations` starts a generation job.
+- `GET /api/generations/{generation_id}` fetches generation state.
+- `GET /api/generations/{generation_id}/events` streams generation events with SSE.
+
+## Navigation
+
+The frontend includes links to `/docs` and `https://github.com/WhoIsJayD/gitresume`.
+
+## Result format
+
+Generation results include a project title, tech stack, bullet points, additional notes, future plans, potential advancements, and interview questions. The UI can copy generated content as plain text or LaTeX.

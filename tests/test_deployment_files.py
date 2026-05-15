@@ -1,6 +1,21 @@
+import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+
+DOC_PAGES = (
+    "docs/overview.mdx",
+    "docs/quickstart.mdx",
+    "docs/hosted.mdx",
+    "docs/self-hosted.mdx",
+    "docs/dashboard.mdx",
+    "docs/byok.mdx",
+    "docs/models.mdx",
+    "docs/oauth-providers.mdx",
+    "docs/deployment.mdx",
+    "docs/security.mdx",
+)
 
 
 def read_text(relative_path: str) -> str:
@@ -98,13 +113,19 @@ def test_env_example_documents_self_hosted_runtime_settings_without_secret_value
 
     for key in (
         "ENVIRONMENT=production",
+        "APP_MODE=self_hosted",
         "REDIS_URL=redis://redis:6379/0",
         "SESSION_SECRET_KEY=change-me",
+        "SESSION_COOKIE_HTTPS_ONLY=",
+        "SESSION_COOKIE_SAME_SITE=lax",
+        "SESSION_COOKIE_MAX_AGE_SECONDS=1209600",
         "FRONTEND_ORIGIN=http://localhost:5173",
         "ALLOWED_HOSTS=localhost,127.0.0.1,api",
         "GITHUB_CLIENT_ID=",
         "GITHUB_CLIENT_SECRET=",
         "GITHUB_TOKEN=",
+        "ALLOW_SAVED_BYOK=false",
+        "SETTINGS_ENCRYPTION_KEY=",
         "LITELLM_API_KEY=",
         "OPENAI_API_KEY=",
         "ANTHROPIC_API_KEY=",
@@ -113,4 +134,120 @@ def test_env_example_documents_self_hosted_runtime_settings_without_secret_value
     ):
         assert key in env_example
 
-    assert "your_" not in env_example
+    for empty_secret in (
+        "GITHUB_CLIENT_ID=",
+        "GITHUB_CLIENT_SECRET=",
+        "GITHUB_TOKEN=",
+        "SETTINGS_ENCRYPTION_KEY=",
+        "LITELLM_API_KEY=",
+        "OPENAI_API_KEY=",
+        "ANTHROPIC_API_KEY=",
+        "GEMINI_API_KEY=",
+        "GROQ_API_KEY=",
+    ):
+        assert empty_secret in env_example
+    for accidental_secret_marker in ("sk-", "ghp_", "github_pat_", "xoxb-"):
+        assert accidental_secret_marker not in env_example
+
+
+def test_mintlify_docs_config_references_required_pages() -> None:
+    docs_json_path = ROOT / "docs" / "docs.json"
+    assert docs_json_path.exists()
+
+    docs_config = json.loads(docs_json_path.read_text(encoding="utf-8"))
+    serialized_config = json.dumps(docs_config)
+    for page in DOC_PAGES:
+        assert page.removeprefix("docs/") in serialized_config
+
+
+def test_mintlify_docs_pages_exist() -> None:
+    for page in DOC_PAGES:
+        assert (ROOT / page).is_file()
+
+
+def test_readme_tells_hosted_dashboard_byok_model_story_with_internal_links() -> None:
+    readme = read_text("README.md")
+
+    assert re.search(r"!\[[^\]]+\]\(https://img\.shields\.io/", readme)
+    for heading in (
+        "## Rebuild story",
+        "## Hosted vs self-hosted feature matrix",
+        "## Dashboard",
+        "## BYOK",
+        "## Model catalog",
+    ):
+        assert heading in readme
+
+    for link in (
+        "[Docs](/docs)",
+        "[GitHub repository](https://github.com/WhoIsJayD/gitresume)",
+        "[.env.example](.env.example)",
+        "[docker-compose.yml](docker-compose.yml)",
+        "[Overview](docs/overview.mdx)",
+        "[Quickstart](docs/quickstart.mdx)",
+        "[Hosted mode](docs/hosted.mdx)",
+        "[Self-hosted mode](docs/self-hosted.mdx)",
+        "[Dashboard](docs/dashboard.mdx)",
+        "[BYOK](docs/byok.mdx)",
+        "[Model catalog](docs/models.mdx)",
+        "[OAuth providers](docs/oauth-providers.mdx)",
+        "[Deployment](docs/deployment.mdx)",
+        "[Security](docs/security.mdx)",
+    ):
+        assert link in readme
+
+    for relative_link in re.findall(r"\[[^\]]+\]\((?!https?://|#|/)([^)]+)\)", readme):
+        target = relative_link.split("#", 1)[0]
+        assert (ROOT / target).exists(), f"README link target does not exist: {target}"
+
+
+def test_readme_docker_quickstart_sets_required_secret_before_compose() -> None:
+    readme = read_text("README.md")
+
+    copy_index = readme.index("cp .env.example .env")
+    secret_index = readme.index("SESSION_SECRET_KEY=replace-with-a-long-random-secret")
+    compose_index = readme.index("docker compose up --build")
+
+    assert copy_index < secret_index < compose_index
+    assert "long non-placeholder" in readme
+    assert "before starting Compose" in readme
+
+
+def test_local_development_docs_avoid_production_placeholder_secret_startup() -> None:
+    readme = read_text("README.md")
+    quickstart = read_text("docs/quickstart.mdx")
+
+    for content, heading in (
+        (readme, "### Local development"),
+        (quickstart, "## Local development"),
+    ):
+        assert heading in content
+        local_dev_section = content.split(heading, maxsplit=1)[1]
+        assert "ENVIRONMENT=development" in local_dev_section
+        assert local_dev_section.index("ENVIRONMENT=development") < local_dev_section.index(
+            "uv run uvicorn"
+        )
+
+
+def test_docs_describe_current_byok_hosted_and_oauth_model_constraints() -> None:
+    byok = read_text("docs/byok.mdx")
+    hosted = read_text("docs/hosted.mdx")
+    models = read_text("docs/models.mdx")
+    oauth = read_text("docs/oauth-providers.mdx")
+
+    for token in ("ALLOW_SAVED_BYOK=true", "SETTINGS_ENCRYPTION_KEY"):
+        assert token in byok
+    assert "`POST /api/generations`" in byok
+    assert "`providerApiKey`" in byok
+    assert "ephemeral BYOK" in byok
+    assert "per generation" in byok
+
+    assert "hosted saved keys require GitHub login" in hosted
+    assert "`GET /api/settings`" in hosted
+    assert "loginRequired" in hosted
+
+    for content in (models, oauth):
+        assert "GitHub Copilot" in content
+        assert "ChatGPT Codex" in content
+        assert "visible but unavailable" in content
+        assert "not selectable" in content
