@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     allowed_hosts: list[str] = Field(default_factory=lambda: ["localhost", "127.0.0.1"])
 
     session_secret_key: str = "change-me-in-production"
+    session_cookie_https_only: bool | None = None
+    session_cookie_same_site: Literal["lax", "strict", "none"] = "lax"
+    session_cookie_max_age_seconds: int = 1_209_600
     redis_url: str | None = None
 
     github_client_id: str | None = None
@@ -60,6 +63,14 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_saved_byok_encryption(self) -> "Settings":
+        placeholder_session_secrets = {"change-me", "change-me-in-production"}
+        session_secret = self.session_secret_key.strip()
+        if self.environment == "production" and (
+            session_secret in placeholder_session_secrets or len(session_secret) < 32
+        ):
+            raise ValueError(
+                "session_secret_key must be at least 32 characters and changed in production"
+            )
         if self.allow_saved_byok:
             if not self.settings_encryption_key:
                 raise ValueError(

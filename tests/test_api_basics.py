@@ -36,7 +36,13 @@ def test_session_endpoint_defaults_to_logged_out() -> None:
     response = client.get("/api/session")
 
     assert response.status_code == 200
-    assert response.json() == {"is_authenticated": False, "github_user": None}
+    assert response.json() == {
+        "is_authenticated": False,
+        "github_user": None,
+        "github_user_id": None,
+        "app_mode": "self_hosted",
+        "login_required": False,
+    }
 
 
 @pytest.mark.parametrize(

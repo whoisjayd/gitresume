@@ -23,7 +23,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
-    app.add_middleware(SessionMiddleware, secret_key=settings.session_secret_key)
+    # Starlette sessions are signed cookies, not encrypted storage. Values are
+    # readable by the browser, so never store OAuth tokens or provider secrets.
+    session_https_only = (
+        settings.environment == "production"
+        if settings.session_cookie_https_only is None
+        else settings.session_cookie_https_only
+    )
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=settings.session_secret_key,
+        https_only=session_https_only,
+        same_site=settings.session_cookie_same_site,
+        max_age=settings.session_cookie_max_age_seconds,
+    )
     app.include_router(api_router)
     return app
 
