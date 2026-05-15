@@ -55,6 +55,29 @@ async def test_generation_state_service_stores_terminal_result() -> None:
 
 
 @pytest.mark.asyncio
+async def test_generation_state_service_persists_model_and_provider_key_id() -> None:
+    redis = FakeRedis(decode_responses=True)
+    service = RedisGenerationStateService(redis)
+    request = GenerationCreateRequest(
+        repo_url="https://github.com/example/project",
+        model="openai/gpt-4o-mini",
+        provider_key_id="key-123",
+    )
+
+    await service.create_generation("gen-model", request)
+
+    state = await service.get_generation("gen-model")
+    raw = await redis.hgetall(service._state_key("gen-model"))
+    task_payload = {"generation_id": "gen-model"}
+
+    assert state is not None
+    assert state.model == "openai/gpt-4o-mini"
+    assert state.provider_key_id == "key-123"
+    assert "secret" not in str(raw).lower()
+    assert "key-123" not in str(task_payload)
+
+
+@pytest.mark.asyncio
 async def test_generation_state_service_replays_events_with_stream_ids_after_last_id() -> None:
     redis = FakeRedis(decode_responses=True)
     service = RedisGenerationStateService(redis)

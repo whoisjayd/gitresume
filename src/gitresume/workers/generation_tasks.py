@@ -6,15 +6,19 @@ from redis.asyncio import Redis
 
 from gitresume.ai.litellm_client import LiteLLMResumeClient
 from gitresume.core.config import get_settings
+from gitresume.core.crypto import StringEncryptor
 from gitresume.schemas.generation import GenerationStatus
 from gitresume.services.generation_state_service import RedisGenerationStateService
 from gitresume.services.ingestion_service import RepositoryIngestionService
+from gitresume.services.key_rotation import RedisProviderKeySelector
+from gitresume.services.model_catalog import model_mode_for, provider_for_model
 from gitresume.services.repository_checkout_service import (
     RepositoryCheckout,
     RepositoryCheckoutService,
 )
 from gitresume.services.repository_service import GitHubRepositoryService
 from gitresume.services.resume_generation_service import ResumeGenerationService
+from gitresume.services.settings_store import RedisSettingsStore
 from gitresume.workers.broker import broker
 
 
@@ -28,11 +32,14 @@ async def run_generation(generation_id: str) -> None:
     service = RedisGenerationStateService(redis)
     checkout_service = RepositoryCheckoutService()
     checkout = None
+    selected_key_secret: str | None = None
+    current_stage = "generation"
     try:
         state = await service.get_generation(generation_id)
         if state is None:
             raise RuntimeError("Generation state not found.")
         github_token = await service.pop_github_token(generation_id)
+        current_stage = "repository validation"
         await service.append_event(
             generation_id,
             event_type="validating",
@@ -48,6 +55,7 @@ async def run_generation(generation_id: str) -> None:
                 str(validation.get("error_message") or "Repository validation failed.")
             )
 
+        current_stage = "repository checkout"
         await service.append_event(
             generation_id,
             event_type="cloning",
@@ -56,6 +64,7 @@ async def run_generation(generation_id: str) -> None:
         )
         checkout = await checkout_service.checkout(state.repository_url, github_token=github_token)
 
+        current_stage = "repository analysis"
         await service.append_event(
             generation_id,
             event_type="analyzing",
@@ -66,21 +75,45 @@ async def run_generation(generation_id: str) -> None:
         context = await RepositoryIngestionService().build_context(checkout.local_path)
         repo_context = _resume_prompt_context(context, checkout)
 
+        current_stage = "resume generation"
         await service.append_event(
             generation_id,
             event_type="generating",
             status=GenerationStatus.GENERATING,
             message="Generating resume",
         )
+        selected_model = state.model or settings.ai_model
+        if state.provider_key_id is not None or getattr(settings, "allow_saved_byok", False):
+            if not settings.settings_encryption_key:
+                if state.provider_key_id is not None:
+                    raise RuntimeError("Saved provider key selection requires settings encryption.")
+            else:
+                settings_store = RedisSettingsStore(
+                    redis,
+                    StringEncryptor(settings.settings_encryption_key.get_secret_value()),
+                )
+                selected_key = await RedisProviderKeySelector(redis, settings_store).select(
+                    scope="global",
+                    provider=provider_for_model(selected_model),
+                    model=selected_model,
+                    provider_key_id=state.provider_key_id,
+                )
+                selected_key_secret = (
+                    selected_key.secret.get_secret_value() if selected_key else None
+                )
         result = await ResumeGenerationService(LiteLLMResumeClient(settings)).generate(
             repo_context=repo_context,
             job_description=state.job_description,
+            model=selected_model,
+            provider_api_key=selected_key_secret,
+            model_mode=model_mode_for(selected_model),
         )
         await service.complete_generation(
             generation_id, result.model_dump(by_alias=True, mode="json")
         )
     except Exception as error:
-        await service.fail_generation(generation_id, str(error))
+        del error
+        await service.fail_generation(generation_id, _public_failure_message(current_stage))
     finally:
         if checkout is not None:
             checkout_service.cleanup_checkout(checkout)
@@ -108,3 +141,20 @@ def _json_default(value: object) -> object:
     if hasattr(value, "model_dump"):
         return value.model_dump(mode="json")
     return str(value)
+
+
+def _redact_secret(message: str, secret: str | None) -> str:
+    if not secret:
+        return message
+    return message.replace(secret, "[redacted]")
+
+
+def _redact_known_secrets(message: str, *secrets: str | None) -> str:
+    redacted = message
+    for secret in secrets:
+        redacted = _redact_secret(redacted, secret)
+    return redacted
+
+
+def _public_failure_message(stage: str) -> str:
+    return f"Generation failed during {stage}."

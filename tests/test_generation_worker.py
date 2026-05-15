@@ -97,11 +97,15 @@ class FakeStateService:
 
 
 class FakeRepositoryService:
+    fail_with_message: str | None = None
+
     async def validate_access(
         self, repo_url: str, github_token: str | None = None
     ) -> dict[str, Any]:
         assert repo_url == "https://github.com/example/project/"
         assert github_token in {"secret-token", None}
+        if self.fail_with_message is not None:
+            raise RuntimeError(self.fail_with_message)
         return {"success": True}
 
 
@@ -134,15 +138,31 @@ class FakeIngestionService:
 
 
 class FakeResumeGenerationService:
+    calls: list[dict[str, Any]] = []
+
     def __init__(self, ai_client: object) -> None:
         self.ai_client = ai_client
 
     async def generate(
-        self, *, repo_context: str, job_description: str | None = None
+        self,
+        *,
+        repo_context: str,
+        job_description: str | None = None,
+        model: str | None = None,
+        provider_api_key: str | None = None,
+        model_mode: str | None = None,
     ) -> ResumeDraft:
         assert '"full_name": "example/project"' in repo_context
         assert '"strategy": "unit-test"' in repo_context
         assert job_description == "Backend role"
+        self.calls.append(
+            {
+                "model": model,
+                "provider_api_key": provider_api_key,
+                "model_mode": model_mode,
+                "ai_client": self.ai_client,
+            }
+        )
         return ResumeDraft(
             project_title="Example Project",
             tech_stack=["Python"],
@@ -155,11 +175,32 @@ class FakeLiteLLMResumeClient:
         self.settings = settings
 
 
+class FakeSecret:
+    def __init__(self, value: str) -> None:
+        self.value = value
+
+    def get_secret_value(self) -> str:
+        return self.value
+
+
+class FakeStringEncryptor:
+    def __init__(self, key: str) -> None:
+        self.key = key
+
+
+class FakeSettingsStore:
+    def __init__(self, redis: object, encryptor: object) -> None:
+        self.redis = redis
+        self.encryptor = encryptor
+
+
 def patch_worker_dependencies(monkeypatch: pytest.MonkeyPatch) -> Any:
     from gitresume.workers import generation_tasks
 
     FakeStateService.instances.clear()
     FakeCheckoutService.instances.clear()
+    FakeRepositoryService.fail_with_message = None
+    FakeResumeGenerationService.calls.clear()
     monkeypatch.setattr(generation_tasks, "Redis", FakeRedis)
     monkeypatch.setattr(generation_tasks, "RedisGenerationStateService", FakeStateService)
     monkeypatch.setattr(generation_tasks, "GitHubRepositoryService", FakeRepositoryService)
@@ -170,7 +211,11 @@ def patch_worker_dependencies(monkeypatch: pytest.MonkeyPatch) -> Any:
     monkeypatch.setattr(
         generation_tasks,
         "get_settings",
-        lambda: SimpleNamespace(redis_url="redis://unit-test"),
+        lambda: SimpleNamespace(
+            redis_url="redis://unit-test",
+            ai_model="gemini/gemini-1.5-flash",
+            settings_encryption_key=None,
+        ),
     )
     return generation_tasks
 
@@ -219,6 +264,174 @@ async def test_run_generation_success_emits_stage_events_and_stores_result(
 
 
 @pytest.mark.asyncio
+async def test_run_generation_uses_selected_model_without_secret_in_state_or_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generation_tasks = patch_worker_dependencies(monkeypatch)
+
+    class ModelStateService(FakeStateService):
+        async def get_generation(self, generation_id: str) -> GenerationState | None:
+            state = await super().get_generation(generation_id)
+            assert state is not None
+            return state.model_copy(update={"model": "openai/gpt-4o-mini"})
+
+    monkeypatch.setattr(generation_tasks, "RedisGenerationStateService", ModelStateService)
+
+    await generation_tasks.run_generation.original_func("gen-model")
+
+    assert FakeResumeGenerationService.calls[-1]["model"] == "openai/gpt-4o-mini"
+    state_service = ModelStateService.instances[-1]
+    assert "provider_api_key" not in str(state_service.events)
+
+
+@pytest.mark.asyncio
+async def test_run_generation_rotates_saved_key_for_selected_model_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generation_tasks = patch_worker_dependencies(monkeypatch)
+
+    class ModelStateService(FakeStateService):
+        async def get_generation(self, generation_id: str) -> GenerationState | None:
+            state = await super().get_generation(generation_id)
+            assert state is not None
+            return state.model_copy(update={"model": "openai/gpt-4o-mini"})
+
+    class FakeStringEncryptor:
+        def __init__(self, key: str) -> None:
+            self.key = key
+
+    class FakeSettingsStore:
+        def __init__(self, redis: object, encryptor: object) -> None:
+            self.redis = redis
+            self.encryptor = encryptor
+
+    class FakeSelectedKey:
+        secret = FakeSecret("sk-rotated")
+
+    class FakeSelector:
+        calls: list[dict[str, str | None]] = []
+
+        def __init__(self, redis: object, settings_store: object) -> None:
+            self.redis = redis
+            self.settings_store = settings_store
+
+        async def select(
+            self,
+            *,
+            scope: str,
+            provider: str,
+            model: str | None = None,
+            provider_key_id: str | None = None,
+        ) -> FakeSelectedKey:
+            self.calls.append(
+                {
+                    "scope": scope,
+                    "provider": provider,
+                    "model": model,
+                    "provider_key_id": provider_key_id,
+                }
+            )
+            return FakeSelectedKey()
+
+    monkeypatch.setattr(generation_tasks, "RedisGenerationStateService", ModelStateService)
+    monkeypatch.setattr(generation_tasks, "StringEncryptor", FakeStringEncryptor)
+    monkeypatch.setattr(generation_tasks, "RedisSettingsStore", FakeSettingsStore)
+    monkeypatch.setattr(generation_tasks, "RedisProviderKeySelector", FakeSelector)
+    monkeypatch.setattr(generation_tasks, "provider_for_model", lambda model: "openai")
+    monkeypatch.setattr(
+        generation_tasks,
+        "get_settings",
+        lambda: SimpleNamespace(
+            redis_url="redis://unit-test",
+            ai_model="gemini/gemini-1.5-flash",
+            settings_encryption_key=FakeSecret("settings encryption passphrase"),
+            allow_saved_byok=True,
+        ),
+    )
+
+    await generation_tasks.run_generation.original_func("gen-model")
+
+    assert FakeSelector.calls == [
+        {
+            "scope": "global",
+            "provider": "openai",
+            "model": "openai/gpt-4o-mini",
+            "provider_key_id": None,
+        }
+    ]
+    assert FakeResumeGenerationService.calls[-1]["provider_api_key"] == "sk-rotated"
+
+
+@pytest.mark.asyncio
+async def test_run_generation_redacts_selected_provider_secret_from_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generation_tasks = patch_worker_dependencies(monkeypatch)
+
+    class KeyedStateService(FakeStateService):
+        async def get_generation(self, generation_id: str) -> GenerationState | None:
+            state = await super().get_generation(generation_id)
+            assert state is not None
+            return state.model_copy(
+                update={"model": "openai/gpt-4o-mini", "provider_key_id": "key-123"}
+            )
+
+    class FakeSelectedKey:
+        secret = FakeSecret("sk-sensitive")
+
+    class FakeSelector:
+        def __init__(self, redis: object, settings_store: object) -> None:
+            del redis, settings_store
+
+        async def select(self, **kwargs: object) -> FakeSelectedKey:
+            del kwargs
+            return FakeSelectedKey()
+
+    class LeakyResumeGenerationService(FakeResumeGenerationService):
+        async def generate(self, **kwargs: object) -> ResumeDraft:
+            raise RuntimeError("provider rejected github=secret-token api_key=sk-sensitive")
+
+    monkeypatch.setattr(generation_tasks, "RedisGenerationStateService", KeyedStateService)
+    monkeypatch.setattr(generation_tasks, "RedisProviderKeySelector", FakeSelector)
+    monkeypatch.setattr(generation_tasks, "StringEncryptor", FakeStringEncryptor)
+    monkeypatch.setattr(generation_tasks, "RedisSettingsStore", FakeSettingsStore)
+    monkeypatch.setattr(generation_tasks, "ResumeGenerationService", LeakyResumeGenerationService)
+    monkeypatch.setattr(
+        generation_tasks,
+        "get_settings",
+        lambda: SimpleNamespace(
+            redis_url="redis://unit-test",
+            ai_model="gemini/gemini-1.5-flash",
+            settings_encryption_key=FakeSecret("settings encryption passphrase"),
+            allow_saved_byok=True,
+        ),
+    )
+
+    await generation_tasks.run_generation.original_func("gen-redact")
+
+    state_service = KeyedStateService.instances[-1]
+    assert state_service.error == "Generation failed during resume generation."
+    assert state_service.events[-1]["message"] == "Generation failed during resume generation."
+    assert "secret-token" not in str(state_service.events)
+    assert "sk-sensitive" not in str(state_service.events)
+
+
+@pytest.mark.asyncio
+async def test_run_generation_validation_failure_uses_safe_public_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generation_tasks = patch_worker_dependencies(monkeypatch)
+    FakeRepositoryService.fail_with_message = "validation failed with token secret-token"
+
+    await generation_tasks.run_generation.original_func("gen-validation")
+
+    state_service = FakeStateService.instances[-1]
+    assert state_service.error == "Generation failed during repository validation."
+    assert state_service.events[-1]["message"] == "Generation failed during repository validation."
+    assert "secret-token" not in str(state_service.events)
+
+
+@pytest.mark.asyncio
 async def test_run_generation_failure_emits_failed_event_and_cleans_up(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -237,7 +450,7 @@ async def test_run_generation_failure_emits_failed_event_and_cleans_up(
 
     state_service = FakeStateService.instances[-1]
     checkout_service = FakeCheckoutService.instances[-1]
-    assert state_service.error == "analysis failed"
+    assert state_service.error == "Generation failed during repository analysis."
     assert state_service.events[-1]["event_type"] == "failed"
     assert state_service.events[-1]["status"] is GenerationStatus.FAILED
     assert checkout_service.cleaned == [checkout_service.checkout_result]

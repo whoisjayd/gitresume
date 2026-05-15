@@ -72,8 +72,10 @@ def test_generation_create_request_accepts_github_token_alias(token_field: str) 
         }
     )
 
-    assert request.github_token == "secret-token"
-    assert request.model_dump(by_alias=True)["githubToken"] == "secret-token"
+    assert request.github_token is not None
+    assert request.github_token.get_secret_value() == "secret-token"
+    assert "githubToken" not in request.model_dump(by_alias=True)
+    assert "secret-token" not in request.model_dump_json(by_alias=True)
 
 
 def test_generation_create_request_normalizes_github_git_suffix() -> None:

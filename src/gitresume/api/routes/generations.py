@@ -15,6 +15,7 @@ from gitresume.schemas.generation import (
 )
 from gitresume.services.generation_state_service import RedisGenerationStateService
 from gitresume.services.generation_task_dispatcher import GenerationTaskDispatcher
+from gitresume.services.model_catalog import find_model_entry
 
 router = APIRouter(prefix="/generations")
 generation_state_dependency = Depends(get_generation_state_service)
@@ -32,10 +33,19 @@ async def create_generation(
     state_service: RedisGenerationStateService = generation_state_dependency,
     dispatcher: GenerationTaskDispatcher = generation_dispatcher_dependency,
 ) -> GenerationCreateResponse:
+    if request.model is not None:
+        model_entry = find_model_entry(request.model)
+        if model_entry is not None and not model_entry.is_available:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Selected model is not available: {model_entry.status or request.model}",
+            )
     generation_id = f"gen-{uuid4().hex}"
     await state_service.create_generation(generation_id, request)
     if request.github_token:
-        await state_service.store_github_token(generation_id, request.github_token)
+        await state_service.store_github_token(
+            generation_id, request.github_token.get_secret_value()
+        )
     try:
         task_id = await dispatcher.enqueue(generation_id)
     except Exception as error:

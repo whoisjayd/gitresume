@@ -35,6 +35,8 @@ class RedisGenerationStateService:
             status=GenerationStatus.QUEUED,
             repository_url=str(request.repo_url),
             job_description=request.job_description,
+            model=request.model,
+            provider_key_id=request.provider_key_id,
             created_at=now,
             updated_at=now,
         )
@@ -235,6 +237,8 @@ class RedisGenerationStateService:
             "result": json.dumps(state.result) if state.result is not None else "",
             "error": state.error or "",
             "task_id": state.task_id or "",
+            "model": state.model or "",
+            "provider_key_id": state.provider_key_id or "",
             "created_at": state.created_at.isoformat(),
             "updated_at": state.updated_at.isoformat(),
         }
@@ -250,6 +254,8 @@ class RedisGenerationStateService:
             result=result,
             error=raw.get("error") or None,
             task_id=raw.get("task_id") or None,
+            model=raw.get("model") or None,
+            provider_key_id=raw.get("provider_key_id") or None,
             created_at=datetime.fromisoformat(raw["created_at"]),
             updated_at=datetime.fromisoformat(raw["updated_at"]),
         )

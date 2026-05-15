@@ -1,6 +1,7 @@
 from collections.abc import AsyncIterator
 
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
 from gitresume.api.dependencies import get_generation_state_service, get_generation_task_dispatcher
 from gitresume.core.config import Settings
@@ -29,6 +30,8 @@ class FakeGenerationStateService:
             status=GenerationStatus.QUEUED,
             repository_url=str(request.repo_url),
             job_description=request.job_description,
+            model=request.model,
+            provider_key_id=request.provider_key_id,
         )
         self.states[generation_id] = state
         self.events[generation_id] = [
@@ -165,6 +168,29 @@ def test_get_generation_status_returns_current_state() -> None:
     assert response.json()["repositoryUrl"] == "https://github.com/example/project/"
 
 
+def test_post_generation_accepts_model_and_provider_key_without_exposing_key_id() -> None:
+    state_service = FakeGenerationStateService()
+    dispatcher = FakeTaskDispatcher()
+    client = make_client(state_service, dispatcher)
+
+    created = client.post(
+        "/api/generations",
+        json={
+            "repoUrl": "https://github.com/example/project",
+            "model": "openai/gpt-4o-mini",
+            "providerKeyId": "key-123",
+        },
+    ).json()
+
+    response = client.get(created["statusUrl"])
+
+    generation_id = created["generationId"]
+    assert dispatcher.calls == [generation_id]
+    assert state_service.states[generation_id].provider_key_id == "key-123"
+    assert response.json()["model"] == "openai/gpt-4o-mini"
+    assert "providerKeyId" not in response.json()
+
+
 def test_post_generation_persists_task_id_on_status() -> None:
     state_service = FakeGenerationStateService()
     dispatcher = FakeTaskDispatcher()
@@ -198,6 +224,18 @@ def test_post_generation_does_not_send_token_to_dispatcher_payload() -> None:
     assert "secret-token" not in response.text
 
 
+def test_generation_create_request_github_token_is_secret_safe() -> None:
+    request = GenerationCreateRequest(
+        repo_url="https://github.com/example/project",
+        github_token="secret-token",
+    )
+
+    assert isinstance(request.github_token, SecretStr)
+    assert "secret-token" not in repr(request)
+    assert "secret-token" not in str(request.model_dump())
+    assert "secret-token" not in request.model_dump_json()
+
+
 def test_post_generation_marks_state_failed_when_enqueue_fails() -> None:
     state_service = FakeGenerationStateService()
     dispatcher = FakeTaskDispatcher()
@@ -214,6 +252,25 @@ def test_post_generation_marks_state_failed_when_enqueue_fails() -> None:
     assert state_service.states[generation_id].status is GenerationStatus.FAILED
     assert state_service.failed[generation_id] == "Failed to enqueue generation job."
     assert generation_id not in state_service.stored_tokens
+
+
+def test_post_generation_rejects_unavailable_oauth_model_before_state_creation() -> None:
+    state_service = FakeGenerationStateService()
+    dispatcher = FakeTaskDispatcher()
+    client = make_client(state_service, dispatcher)
+
+    response = client.post(
+        "/api/generations",
+        json={
+            "repoUrl": "https://github.com/example/project",
+            "model": "github_copilot/gpt-4.1",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "not available" in response.json()["detail"]
+    assert state_service.states == {}
+    assert dispatcher.calls == []
 
 
 def test_post_generation_rejects_userinfo_repository_url_before_state_creation() -> None:

@@ -2,7 +2,15 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, TypeAdapter, field_validator
+from pydantic import (
+    AnyHttpUrl,
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    TypeAdapter,
+    field_validator,
+)
 
 from gitresume.services.repository_service import parse_github_repository_url
 
@@ -30,10 +38,18 @@ class GenerationCreateRequest(BaseModel):
         validation_alias="jobDescription",
         serialization_alias="jobDescription",
     )
-    github_token: str | None = Field(
+    github_token: SecretStr | None = Field(
         default=None,
         validation_alias="githubToken",
         serialization_alias="githubToken",
+        exclude=True,
+        repr=False,
+    )
+    model: str | None = Field(default=None, validation_alias="model", serialization_alias="model")
+    provider_key_id: str | None = Field(
+        default=None,
+        validation_alias="providerKeyId",
+        serialization_alias="providerKeyId",
     )
 
     @field_validator("repo_url")
@@ -71,5 +87,11 @@ class GenerationState(BaseModel):
     result: dict[str, Any] | None = None
     error: str | None = None
     task_id: str | None = Field(default=None, serialization_alias="taskId")
+    model: str | None = Field(default=None, serialization_alias="model")
+    provider_key_id: str | None = Field(
+        default=None,
+        serialization_alias="providerKeyId",
+        exclude=True,
+    )
     created_at: datetime = Field(default_factory=utc_now, serialization_alias="createdAt")
     updated_at: datetime = Field(default_factory=utc_now, serialization_alias="updatedAt")
