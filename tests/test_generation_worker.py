@@ -46,6 +46,7 @@ class FakeStateService:
             job_description="Backend role",
         )
         self.token: str | None = "secret-token"
+        self.provider_api_key: str | None = None
         self.__class__.instances.append(self)
 
     async def get_generation(self, generation_id: str) -> GenerationState | None:
@@ -56,6 +57,12 @@ class FakeStateService:
         token = self.token
         self.token = None
         return token
+
+    async def pop_provider_api_key(self, generation_id: str) -> str | None:
+        del generation_id
+        secret = self.provider_api_key
+        self.provider_api_key = None
+        return secret
 
     async def append_event(
         self,
@@ -429,6 +436,24 @@ async def test_run_generation_validation_failure_uses_safe_public_error(
     assert state_service.error == "Generation failed during repository validation."
     assert state_service.events[-1]["message"] == "Generation failed during repository validation."
     assert "secret-token" not in str(state_service.events)
+
+
+@pytest.mark.asyncio
+async def test_run_generation_failure_logs_safe_exception_type_without_secret_message(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    generation_tasks = patch_worker_dependencies(monkeypatch)
+    FakeRepositoryService.fail_with_message = "validation failed with token secret-token"
+
+    await generation_tasks.run_generation.original_func("gen-validation")
+
+    assert "Generation job failed" in caplog.text
+    assert "gen-validation" in caplog.text
+    assert "repository validation" in caplog.text
+    assert "RuntimeError" in caplog.text
+    assert "validation failed with token secret-token" not in caplog.text
+    assert "secret-token" not in caplog.text
 
 
 @pytest.mark.asyncio

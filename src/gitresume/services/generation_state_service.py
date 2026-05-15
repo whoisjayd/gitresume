@@ -37,6 +37,7 @@ class RedisGenerationStateService:
             job_description=request.job_description,
             model=request.model,
             provider_key_id=request.provider_key_id,
+            provider_key_scope=request.provider_key_scope,
             created_at=now,
             updated_at=now,
         )
@@ -193,6 +194,11 @@ class RedisGenerationStateService:
             self._credential_key(generation_id), token, ex=self.generation_ttl_seconds
         )
 
+    async def store_provider_api_key(self, generation_id: str, secret: str) -> None:
+        await self.redis.set(
+            self._provider_api_key_key(generation_id), secret, ex=self.generation_ttl_seconds
+        )
+
     async def pop_github_token(self, generation_id: str) -> str | None:
         key = self._credential_key(generation_id)
         token = await self.redis.getdel(key)
@@ -202,8 +208,20 @@ class RedisGenerationStateService:
             return token.decode()
         return str(token)
 
+    async def pop_provider_api_key(self, generation_id: str) -> str | None:
+        key = self._provider_api_key_key(generation_id)
+        secret = await self.redis.getdel(key)
+        if secret is None:
+            return None
+        if isinstance(secret, bytes):
+            return secret.decode()
+        return str(secret)
+
     async def delete_github_token(self, generation_id: str) -> None:
         await self.redis.delete(self._credential_key(generation_id))
+
+    async def delete_provider_api_key(self, generation_id: str) -> None:
+        await self.redis.delete(self._provider_api_key_key(generation_id))
 
     async def _refresh_generation_ttl(self, generation_id: str) -> None:
         ttl = self.generation_ttl_seconds
@@ -228,6 +246,10 @@ class RedisGenerationStateService:
         return f"generation:{generation_id}:github-token"
 
     @staticmethod
+    def _provider_api_key_key(generation_id: str) -> str:
+        return f"generation:{generation_id}:provider-api-key"
+
+    @staticmethod
     def _state_to_hash(state: GenerationState) -> dict[str, str]:
         return {
             "generation_id": state.generation_id,
@@ -239,6 +261,7 @@ class RedisGenerationStateService:
             "task_id": state.task_id or "",
             "model": state.model or "",
             "provider_key_id": state.provider_key_id or "",
+            "provider_key_scope": state.provider_key_scope or "",
             "created_at": state.created_at.isoformat(),
             "updated_at": state.updated_at.isoformat(),
         }
@@ -256,6 +279,7 @@ class RedisGenerationStateService:
             task_id=raw.get("task_id") or None,
             model=raw.get("model") or None,
             provider_key_id=raw.get("provider_key_id") or None,
+            provider_key_scope=raw.get("provider_key_scope") or None,
             created_at=datetime.fromisoformat(raw["created_at"]),
             updated_at=datetime.fromisoformat(raw["updated_at"]),
         )

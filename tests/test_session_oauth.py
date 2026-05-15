@@ -129,22 +129,22 @@ def test_session_response_reports_self_hosted_without_login_requirement() -> Non
 
     assert response.status_code == 200
     assert response.json() == {
-        "is_authenticated": False,
-        "github_user": None,
-        "github_user_id": None,
-        "app_mode": "self_hosted",
-        "login_required": False,
+        "isAuthenticated": False,
+        "githubUser": None,
+        "githubUserId": None,
+        "appMode": "self_hosted",
+        "loginRequired": False,
     }
 
 
-def test_session_response_reports_hosted_login_required_when_logged_out() -> None:
+def test_session_response_reports_hosted_loginRequired_when_logged_out() -> None:
     client = make_client(app_mode="hosted")
 
     response = client.get("/api/session")
 
     assert response.status_code == 200
-    assert response.json()["login_required"] is True
-    assert response.json()["app_mode"] == "hosted"
+    assert response.json()["loginRequired"] is True
+    assert response.json()["appMode"] == "hosted"
 
 
 def test_login_redirects_to_github_authorize_with_state_in_session() -> None:
@@ -217,7 +217,7 @@ def test_callback_rejects_invalid_state_without_authenticating() -> None:
     )
 
     assert response.status_code == 400
-    assert client.get("/api/session").json()["is_authenticated"] is False
+    assert client.get("/api/session").json()["isAuthenticated"] is False
 
 
 def test_callback_rejects_missing_state_without_authenticating() -> None:
@@ -235,7 +235,7 @@ def test_callback_rejects_missing_state_without_authenticating() -> None:
     )
 
     assert response.status_code == 400
-    assert client.get("/api/session").json()["is_authenticated"] is False
+    assert client.get("/api/session").json()["isAuthenticated"] is False
 
 
 def test_callback_invalid_state_clears_existing_authentication(monkeypatch) -> None:
@@ -246,7 +246,7 @@ def test_callback_invalid_state_clears_existing_authentication(monkeypatch) -> N
         callback_url="https://example.com/api/session/callback",
     )
     complete_login(client)
-    assert client.get("/api/session").json()["is_authenticated"] is True
+    assert client.get("/api/session").json()["isAuthenticated"] is True
     client.get("/api/session/login", follow_redirects=False)
 
     response = client.get(
@@ -257,11 +257,11 @@ def test_callback_invalid_state_clears_existing_authentication(monkeypatch) -> N
 
     assert response.status_code == 400
     assert client.get("/api/session").json() == {
-        "is_authenticated": False,
-        "github_user": None,
-        "github_user_id": None,
-        "app_mode": "self_hosted",
-        "login_required": False,
+        "isAuthenticated": False,
+        "githubUser": None,
+        "githubUserId": None,
+        "appMode": "self_hosted",
+        "loginRequired": False,
     }
 
 
@@ -324,11 +324,11 @@ def test_callback_exchanges_code_fetches_user_and_does_not_store_token(monkeypat
         ),
     ]
     assert client.get("/api/session").json() == {
-        "is_authenticated": True,
-        "github_user": "octocat",
-        "github_user_id": "12345",
-        "app_mode": "self_hosted",
-        "login_required": False,
+        "isAuthenticated": True,
+        "githubUser": "octocat",
+        "githubUserId": "12345",
+        "appMode": "self_hosted",
+        "loginRequired": False,
     }
     session_data = session_cookie_payload(client)
     assert session_data == {
@@ -510,16 +510,16 @@ def test_logout_clears_authentication_session(monkeypatch) -> None:
         callback_url="https://example.com/api/session/callback",
     )
     complete_login(client)
-    assert client.get("/api/session").json()["is_authenticated"] is True
+    assert client.get("/api/session").json()["isAuthenticated"] is True
 
     response = client.post("/api/session/logout")
 
     assert response.status_code == 200
     assert response.json() == {
-        "is_authenticated": False,
-        "github_user": None,
-        "github_user_id": None,
-        "app_mode": "self_hosted",
-        "login_required": False,
+        "isAuthenticated": False,
+        "githubUser": None,
+        "githubUserId": None,
+        "appMode": "self_hosted",
+        "loginRequired": False,
     }
     assert client.cookies.get("session") is None

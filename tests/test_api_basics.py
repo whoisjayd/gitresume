@@ -37,11 +37,11 @@ def test_session_endpoint_defaults_to_logged_out() -> None:
 
     assert response.status_code == 200
     assert response.json() == {
-        "is_authenticated": False,
-        "github_user": None,
-        "github_user_id": None,
-        "app_mode": "self_hosted",
-        "login_required": False,
+        "isAuthenticated": False,
+        "githubUser": None,
+        "githubUserId": None,
+        "appMode": "self_hosted",
+        "loginRequired": False,
     }
 
 

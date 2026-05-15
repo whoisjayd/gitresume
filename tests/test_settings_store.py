@@ -8,11 +8,13 @@ from pydantic import ValidationError
 SETTINGS_KEY = "settings encryption passphrase with enough entropy"
 
 
-def test_settings_rejects_saved_byok_without_encryption_key() -> None:
+def test_settings_allows_saved_byok_without_encryption_key_for_disabled_runtime_status() -> None:
     from gitresume.core.config import Settings
 
-    with pytest.raises(ValidationError, match="settings_encryption_key"):
-        Settings(allow_saved_byok=True, settings_encryption_key=None)
+    settings = Settings(allow_saved_byok=True, settings_encryption_key=None)
+
+    assert settings.allow_saved_byok is True
+    assert settings.settings_encryption_key is None
 
 
 def test_settings_defaults_to_self_hosted_app_mode() -> None:

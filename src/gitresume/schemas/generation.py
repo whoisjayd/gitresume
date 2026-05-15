@@ -45,12 +45,20 @@ class GenerationCreateRequest(BaseModel):
         exclude=True,
         repr=False,
     )
+    provider_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias="providerApiKey",
+        serialization_alias="providerApiKey",
+        exclude=True,
+        repr=False,
+    )
     model: str | None = Field(default=None, validation_alias="model", serialization_alias="model")
     provider_key_id: str | None = Field(
         default=None,
         validation_alias="providerKeyId",
         serialization_alias="providerKeyId",
     )
+    provider_key_scope: str | None = Field(default=None, exclude=True, repr=False)
 
     @field_validator("repo_url")
     @classmethod
@@ -93,5 +101,6 @@ class GenerationState(BaseModel):
         serialization_alias="providerKeyId",
         exclude=True,
     )
+    provider_key_scope: str | None = Field(default=None, exclude=True)
     created_at: datetime = Field(default_factory=utc_now, serialization_alias="createdAt")
     updated_at: datetime = Field(default_factory=utc_now, serialization_alias="updatedAt")

@@ -44,6 +44,7 @@ class RedisSettingsStore:
         self.ttl_seconds = ttl_seconds
 
     async def save_provider_key(self, scope: str, key_input: ProviderKeyInput) -> StoredProviderKey:
+        sort_order = int(await self.redis.incr(self._provider_key_sequence_key(scope)))
         stored = StoredProviderKey(
             id=uuid4().hex,
             provider=key_input.provider,
@@ -52,7 +53,8 @@ class RedisSettingsStore:
             created_at=datetime.now(UTC),
         )
         payload = stored.model_dump(mode="json") | {
-            "encrypted_secret": self.encryptor.encrypt(key_input.secret.get_secret_value())
+            "encrypted_secret": self.encryptor.encrypt(key_input.secret.get_secret_value()),
+            "_sort_order": sort_order,
         }
         await self._hset_with_ttl(
             scope,
@@ -80,12 +82,13 @@ class RedisSettingsStore:
 
     async def list_provider_keys(self, scope: str) -> list[StoredProviderKey]:
         raw_items = await self.redis.hgetall(self._provider_keys_key(scope))
-        keys = [
-            self._stored_key_from_payload(json.loads(value))
+        payloads = [
+            json.loads(value)
             for field, value in raw_items.items()
             if not self._is_internal_field(field)
         ]
-        return sorted(keys, key=lambda key: (key.created_at, key.id))
+        payloads.sort(key=self._provider_key_sort_key)
+        return [self._stored_key_from_payload(payload) for payload in payloads]
 
     async def get_provider_key(self, scope: str, key_id: str) -> StoredProviderKey | None:
         raw = await self.redis.hget(self._provider_keys_key(scope), key_id)
@@ -170,6 +173,18 @@ class RedisSettingsStore:
     @staticmethod
     def _dashboard_settings_key(scope: str) -> str:
         return f"settings:{scope}:dashboard"
+
+    @staticmethod
+    def _provider_key_sequence_key(scope: str) -> str:
+        return f"settings:{scope}:provider-keys:sequence"
+
+    @staticmethod
+    def _provider_key_sort_key(payload: dict[str, Any]) -> tuple[int, str, str]:
+        try:
+            sort_order = int(payload.get("_sort_order", 0))
+        except (TypeError, ValueError):
+            sort_order = 0
+        return (sort_order, str(payload.get("created_at") or ""), str(payload.get("id") or ""))
 
     @staticmethod
     def _stored_key_from_payload(payload: dict[str, Any]) -> StoredProviderKey:

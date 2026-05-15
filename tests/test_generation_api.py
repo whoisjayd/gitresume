@@ -20,6 +20,7 @@ class FakeGenerationStateService:
         self.events: dict[str, list[GenerationEvent]] = {}
         self.stream_ids: dict[str, list[str]] = {}
         self.stored_tokens: dict[str, str] = {}
+        self.stored_provider_api_keys: dict[str, str] = {}
         self.failed: dict[str, str] = {}
 
     async def create_generation(
@@ -32,6 +33,7 @@ class FakeGenerationStateService:
             job_description=request.job_description,
             model=request.model,
             provider_key_id=request.provider_key_id,
+            provider_key_scope=request.provider_key_scope,
         )
         self.states[generation_id] = state
         self.events[generation_id] = [
@@ -73,8 +75,14 @@ class FakeGenerationStateService:
     async def store_github_token(self, generation_id: str, token: str) -> None:
         self.stored_tokens[generation_id] = token
 
+    async def store_provider_api_key(self, generation_id: str, secret: str) -> None:
+        self.stored_provider_api_keys[generation_id] = secret
+
     async def delete_github_token(self, generation_id: str) -> None:
         self.stored_tokens.pop(generation_id, None)
+
+    async def delete_provider_api_key(self, generation_id: str) -> None:
+        self.stored_provider_api_keys.pop(generation_id, None)
 
     async def fail_generation(self, generation_id: str, error: str) -> None:
         self.failed[generation_id] = error
@@ -222,6 +230,47 @@ def test_post_generation_does_not_send_token_to_dispatcher_payload() -> None:
     assert dispatcher.calls == [generation_id]
     assert state_service.stored_tokens == {generation_id: "secret-token"}
     assert "secret-token" not in response.text
+
+
+def test_post_generation_stores_ephemeral_provider_api_key_outside_state_and_responses() -> None:
+    state_service = FakeGenerationStateService()
+    dispatcher = FakeTaskDispatcher()
+    client = make_client(state_service, dispatcher)
+
+    response = client.post(
+        "/api/generations",
+        json={
+            "repoUrl": "https://github.com/example/project",
+            "model": "openai/gpt-4o-mini",
+            "providerApiKey": "sk-provider-secret",
+        },
+    )
+
+    assert response.status_code == 202
+    generation_id = response.json()["generationId"]
+    status_response = client.get(response.json()["statusUrl"])
+    assert state_service.stored_provider_api_keys == {generation_id: "sk-provider-secret"}
+    assert "sk-provider-secret" not in response.text
+    assert "sk-provider-secret" not in status_response.text
+    assert "sk-provider-secret" not in repr(state_service.states[generation_id])
+
+
+def test_post_generation_deletes_ephemeral_provider_api_key_when_enqueue_fails() -> None:
+    state_service = FakeGenerationStateService()
+    dispatcher = FakeTaskDispatcher()
+    dispatcher.fail = True
+    client = make_client(state_service, dispatcher)
+
+    response = client.post(
+        "/api/generations",
+        json={
+            "repoUrl": "https://github.com/example/project",
+            "providerApiKey": "sk-provider-secret",
+        },
+    )
+
+    assert response.status_code == 503
+    assert state_service.stored_provider_api_keys == {}
 
 
 def test_generation_create_request_github_token_is_secret_safe() -> None:

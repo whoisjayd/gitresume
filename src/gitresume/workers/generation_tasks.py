@@ -1,4 +1,5 @@
 import json
+import logging
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 
@@ -21,6 +22,8 @@ from gitresume.services.resume_generation_service import ResumeGenerationService
 from gitresume.services.settings_store import RedisSettingsStore
 from gitresume.workers.broker import broker
 
+logger = logging.getLogger(__name__)
+
 
 @broker.task
 async def run_generation(generation_id: str) -> None:
@@ -39,6 +42,7 @@ async def run_generation(generation_id: str) -> None:
         if state is None:
             raise RuntimeError("Generation state not found.")
         github_token = await service.pop_github_token(generation_id)
+        ephemeral_provider_api_key = await service.pop_provider_api_key(generation_id)
         current_stage = "repository validation"
         await service.append_event(
             generation_id,
@@ -83,7 +87,9 @@ async def run_generation(generation_id: str) -> None:
             message="Generating resume",
         )
         selected_model = state.model or settings.ai_model
-        if state.provider_key_id is not None or getattr(settings, "allow_saved_byok", False):
+        if ephemeral_provider_api_key:
+            selected_key_secret = ephemeral_provider_api_key
+        elif state.provider_key_id is not None or getattr(settings, "allow_saved_byok", False):
             if not settings.settings_encryption_key:
                 if state.provider_key_id is not None:
                     raise RuntimeError("Saved provider key selection requires settings encryption.")
@@ -93,7 +99,7 @@ async def run_generation(generation_id: str) -> None:
                     StringEncryptor(settings.settings_encryption_key.get_secret_value()),
                 )
                 selected_key = await RedisProviderKeySelector(redis, settings_store).select(
-                    scope="global",
+                    scope=state.provider_key_scope or "global",
                     provider=provider_for_model(selected_model),
                     model=selected_model,
                     provider_key_id=state.provider_key_id,
@@ -112,7 +118,12 @@ async def run_generation(generation_id: str) -> None:
             generation_id, result.model_dump(by_alias=True, mode="json")
         )
     except Exception as error:
-        del error
+        logger.warning(
+            "Generation job failed generation_id=%s stage=%s exception_type=%s",
+            generation_id,
+            current_stage,
+            type(error).__name__,
+        )
         await service.fail_generation(generation_id, _public_failure_message(current_stage))
     finally:
         if checkout is not None:

@@ -3,7 +3,7 @@ import re
 from collections.abc import AsyncIterator
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sse_starlette.sse import EventSourceResponse
 
 from gitresume.api.dependencies import get_generation_state_service, get_generation_task_dispatcher
@@ -30,6 +30,7 @@ generation_dispatcher_dependency = Depends(get_generation_task_dispatcher)
 )
 async def create_generation(
     request: GenerationCreateRequest,
+    http_request: Request,
     state_service: RedisGenerationStateService = generation_state_dependency,
     dispatcher: GenerationTaskDispatcher = generation_dispatcher_dependency,
 ) -> GenerationCreateResponse:
@@ -40,16 +41,22 @@ async def create_generation(
                 status_code=422,
                 detail=f"Selected model is not available: {model_entry.status or request.model}",
             )
+    request.provider_key_scope = _provider_key_scope(http_request, request)
     generation_id = f"gen-{uuid4().hex}"
     await state_service.create_generation(generation_id, request)
     if request.github_token:
         await state_service.store_github_token(
             generation_id, request.github_token.get_secret_value()
         )
+    if request.provider_api_key:
+        await state_service.store_provider_api_key(
+            generation_id, request.provider_api_key.get_secret_value()
+        )
     try:
         task_id = await dispatcher.enqueue(generation_id)
     except Exception as error:
         await state_service.delete_github_token(generation_id)
+        await state_service.delete_provider_api_key(generation_id)
         await state_service.fail_generation(generation_id, "Failed to enqueue generation job.")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -62,6 +69,21 @@ async def create_generation(
         events_url=f"/api/generations/{generation_id}/events",
         redirect_path=f"/generations/{generation_id}",
     )
+
+
+def _provider_key_scope(http_request: Request, request: GenerationCreateRequest) -> str | None:
+    if request.provider_key_id is None:
+        return None
+    settings = http_request.app.state.settings
+    if settings.app_mode != "hosted":
+        return "global"
+    session = getattr(http_request, "session", {})
+    if not session.get("is_authenticated") or not session.get("github_user_id"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="GitHub login is required to use a saved provider key.",
+        )
+    return f"user:{session['github_user_id']}"
 
 
 @router.get(

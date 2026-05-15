@@ -71,11 +71,7 @@ class Settings(BaseSettings):
             raise ValueError(
                 "session_secret_key must be at least 32 characters and changed in production"
             )
-        if self.allow_saved_byok:
-            if not self.settings_encryption_key:
-                raise ValueError(
-                    "settings_encryption_key is required when allow_saved_byok is enabled"
-                )
+        if self.settings_encryption_key:
             encryptor = StringEncryptor(self.settings_encryption_key.get_secret_value())
             encrypted = encryptor.encrypt("settings-check")
             if encryptor.decrypt(encrypted) != "settings-check":

@@ -64,7 +64,7 @@ def fail_oauth(session: dict[str, Any], status_code: int, detail: str) -> NoRetu
     raise HTTPException(status_code=status_code, detail=detail)
 
 
-@router.get("/session", response_model=SessionResponse)
+@router.get("/session", response_model=SessionResponse, response_model_by_alias=True)
 async def read_session(request: Request) -> SessionResponse:
     session = getattr(request, "session", {})
     return build_session_response(session, get_request_settings(request))
@@ -148,7 +148,7 @@ async def callback(
     return RedirectResponse(redirect_path)
 
 
-@router.post("/session/logout", response_model=SessionResponse)
+@router.post("/session/logout", response_model=SessionResponse, response_model_by_alias=True)
 async def logout(request: Request) -> SessionResponse:
     request.session.clear()
     return build_session_response(request.session, get_request_settings(request))
