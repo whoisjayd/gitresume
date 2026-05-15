@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from gitresume.api.routes import repositories
 from gitresume.core.config import Settings
 from gitresume.main import create_app
 from gitresume.services.repository_service import parse_github_repository_url
@@ -78,3 +79,58 @@ def test_repository_validate_endpoint_rejects_invalid_urls(repo_url: str) -> Non
 
     assert response.status_code == 422
     assert response.json()["detail"]["error"] == "invalid_repository_url"
+
+
+@pytest.mark.parametrize("token_query_name", ["github_token", "githubToken"])
+def test_repository_validate_get_rejects_github_token_query(token_query_name: str) -> None:
+    client = make_client()
+
+    response = client.get(
+        "/api/repositories/validate",
+        params={
+            "repo_url": "https://github.com/example/project",
+            token_query_name: "secret-token",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "secret-token" not in response.text
+
+
+def test_repository_validate_post_accepts_github_token_body_without_echoing_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: dict[str, str | None] = {}
+
+    class FakeRepositoryService:
+        async def validate_access(
+            self, repo_url: str, github_token: str | None = None
+        ) -> dict[str, object]:
+            observed["repo_url"] = repo_url
+            observed["github_token"] = github_token
+            return {
+                "success": True,
+                "owner": "example",
+                "repo_name": "project",
+                "full_name": "example/project",
+                "canonical_url": "https://github.com/example/project",
+                "is_public": False,
+                "error_code": None,
+                "error_message": None,
+            }
+
+    monkeypatch.setattr(repositories, "repository_service", FakeRepositoryService())
+    client = make_client()
+
+    response = client.post(
+        "/api/repositories/validate",
+        json={"repoUrl": "https://github.com/example/project", "githubToken": "secret-token"},
+    )
+
+    assert response.status_code == 200
+    assert observed == {
+        "repo_url": "https://github.com/example/project",
+        "github_token": "secret-token",
+    }
+    assert response.json()["canonicalUrl"] == "https://github.com/example/project"
+    assert "secret-token" not in response.text
