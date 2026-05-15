@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "gitresume_public",
+  "project_id": "1ce5636a-932f-472c-a211-39efd1f46998"
+}
