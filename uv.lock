@@ -492,6 +492,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiofiles" },
+    { name = "cryptography" },
     { name = "fastapi" },
     { name = "gitingest" },
     { name = "httpx" },
@@ -529,6 +530,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aiofiles", specifier = ">=25.1.0" },
+    { name = "cryptography", specifier = ">=46.0.3" },
     { name = "fastapi", specifier = ">=0.136.1" },
     { name = "gitingest", specifier = ">=0.3.1" },
     { name = "httpx", specifier = ">=0.28.1" },

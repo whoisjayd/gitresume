@@ -1,8 +1,10 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import AnyHttpUrl, Field, field_validator
+from pydantic import AnyHttpUrl, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from gitresume.core.crypto import StringEncryptor
 
 
 class Settings(BaseSettings):
@@ -17,6 +19,7 @@ class Settings(BaseSettings):
 
     app_name: str = "GitResume"
     environment: Literal["development", "test", "production"] = "development"
+    app_mode: Literal["self_hosted", "hosted"] = "self_hosted"
     log_level: str = "INFO"
     frontend_origin: str = "http://localhost:5173"
     allowed_hosts: list[str] = Field(default_factory=lambda: ["localhost", "127.0.0.1"])
@@ -28,6 +31,9 @@ class Settings(BaseSettings):
     github_client_secret: str | None = None
     github_token: str | None = None
     callback_url: AnyHttpUrl | None = None
+
+    allow_saved_byok: bool = False
+    settings_encryption_key: SecretStr | None = None
 
     ai_model: str = "gemini/gemini-1.5-flash"
     ai_temperature: float = 0.2
@@ -51,6 +57,19 @@ class Settings(BaseSettings):
     @classmethod
     def normalize_log_level(cls, value: str) -> str:
         return value.upper()
+
+    @model_validator(mode="after")
+    def validate_saved_byok_encryption(self) -> "Settings":
+        if self.allow_saved_byok:
+            if not self.settings_encryption_key:
+                raise ValueError(
+                    "settings_encryption_key is required when allow_saved_byok is enabled"
+                )
+            encryptor = StringEncryptor(self.settings_encryption_key.get_secret_value())
+            encrypted = encryptor.encrypt("settings-check")
+            if encryptor.decrypt(encrypted) != "settings-check":
+                raise ValueError("settings_encryption_key is not usable for encryption")
+        return self
 
 
 @lru_cache
