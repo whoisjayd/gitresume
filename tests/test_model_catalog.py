@@ -102,6 +102,43 @@ def test_model_catalog_includes_oauth_text_and_responses_models_when_metadata_mi
     assert entries == sorted(entries, key=lambda entry: (entry.provider, entry.id))
 
 
+def test_model_catalog_marks_litellm_oauth_provider_metadata_as_oauth(
+    monkeypatch,
+) -> None:
+    from gitresume.services import model_catalog
+    from gitresume.services.oauth_provider_store import OAuthProviderStatus
+
+    monkeypatch.setattr(
+        model_catalog.litellm,
+        "model_cost",
+        {
+            "github_copilot/gpt-5.2": {
+                "litellm_provider": "github_copilot",
+                "mode": "chat",
+            },
+            "chatgpt/gpt-5.2": {
+                "litellm_provider": "chatgpt",
+                "mode": "responses",
+            },
+        },
+        raising=False,
+    )
+    statuses = {
+        "github_copilot": OAuthProviderStatus(provider="github_copilot", connected=True),
+        "chatgpt": OAuthProviderStatus(provider="chatgpt", connected=True),
+    }
+
+    by_id = {entry.id: entry for entry in model_catalog.LiteLLMModelCatalog(statuses).list_models()}
+
+    assert by_id["github_copilot/gpt-5.2"].auth_type == "oauth"
+    assert by_id["github_copilot/gpt-5.2"].is_available is True
+    assert by_id["chatgpt/gpt-5.2"].auth_type == "oauth"
+    assert by_id["chatgpt/gpt-5.2"].mode == "responses"
+    assert by_id["chatgpt/gpt-5.2"].is_available is True
+    assert by_id["github_copilot/gpt-5-mini"].auth_type == "oauth"
+    assert by_id["github_copilot/gpt-5-mini"].is_available is True
+
+
 def test_model_catalog_includes_openrouter_free_models_when_metadata_missing(monkeypatch) -> None:
     from gitresume.services import model_catalog
 

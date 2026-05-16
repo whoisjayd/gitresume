@@ -182,14 +182,16 @@ def make_client(
     dispatcher: FakeTaskDispatcher,
     **settings_overrides,
 ) -> TestClient:
-    settings = Settings(
-        environment="test",
-        session_secret_key="test-secret",
-        allowed_hosts=["testserver"],
-        frontend_origin="http://testserver",
-        settings_encryption_key=SETTINGS_KEY,
+    settings_values = {
+        "environment": "test",
+        "session_secret_key": "test-secret",
+        "allowed_hosts": ["testserver"],
+        "frontend_origin": "http://testserver",
+        "settings_encryption_key": SETTINGS_KEY,
+        "ai_model": "gemini/gemini-1.5-flash",
         **settings_overrides,
-    )
+    }
+    settings = Settings(**settings_values)
     app = create_app(settings)
     app.state.redis = FakeRedis(decode_responses=True)
     app.dependency_overrides[get_generation_state_service] = lambda: state_service

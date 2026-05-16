@@ -52,6 +52,7 @@ TEXT_MODEL_MARKERS = {
 }
 
 OAUTH_TEXT_MODELS: tuple[dict[str, str], ...] = (
+    {"id": "github_copilot/gpt-5-mini", "provider": "github_copilot", "mode": "chat"},
     {"id": "github_copilot/gpt-4.1", "provider": "github_copilot", "mode": "chat"},
     {"id": "github_copilot/gpt-4o", "provider": "github_copilot", "mode": "chat"},
     {"id": "github_copilot/claude-3.7-sonnet", "provider": "github_copilot", "mode": "chat"},
@@ -59,6 +60,9 @@ OAUTH_TEXT_MODELS: tuple[dict[str, str], ...] = (
     {"id": "chatgpt/codex-mini-latest", "provider": "chatgpt", "mode": "responses"},
     {"id": "chatgpt/gpt-5-codex", "provider": "chatgpt", "mode": "responses"},
 )
+OAUTH_PROVIDERS = {oauth_model["provider"] for oauth_model in OAUTH_TEXT_MODELS}
+RESPONSES_API_ALL_MODEL_OAUTH_PROVIDERS = {"chatgpt"}
+RESPONSES_API_MODEL_MARKERS = ("codex",)
 
 OPENROUTER_FREE_MODELS: tuple[dict[str, str], ...] = (
     {
@@ -149,7 +153,7 @@ def _build_model_catalog_entries(
 ) -> tuple[ModelCatalogEntry, ...]:
     entries: dict[str, ModelCatalogEntry] = {}
     for model_id, metadata in _iter_litellm_metadata():
-        entry = _entry_from_metadata(model_id, metadata)
+        entry = _entry_from_metadata(model_id, metadata, oauth_provider_statuses)
         if entry is not None:
             entries[entry.id] = entry
 
@@ -175,8 +179,18 @@ def _iter_litellm_metadata() -> list[tuple[str, dict[str, Any]]]:
     ]
 
 
-def _entry_from_metadata(model_id: str, metadata: dict[str, Any]) -> ModelCatalogEntry | None:
+def _entry_from_metadata(
+    model_id: str,
+    metadata: dict[str, Any],
+    oauth_provider_statuses: dict[str, OAuthProviderStatus] | None = None,
+) -> ModelCatalogEntry | None:
     provider = str(metadata.get("litellm_provider") or model_id.split("/", 1)[0])
+    if provider in OAUTH_PROVIDERS:
+        mode = _oauth_model_mode(provider, model_id, metadata)
+        return _entry_from_oauth_model(
+            {"id": model_id, "provider": provider, "mode": mode},
+            oauth_provider_statuses=oauth_provider_statuses,
+        )
     mode = _normalize_mode(metadata.get("mode"), model_id=model_id, provider=provider)
     if mode is None:
         return None
@@ -192,6 +206,15 @@ def _entry_from_metadata(model_id: str, metadata: dict[str, Any]) -> ModelCatalo
         status=None,
         context_window=_context_window(metadata),
     )
+
+
+def _oauth_model_mode(provider: str, model_id: str, metadata: dict[str, Any]) -> str:
+    if provider in RESPONSES_API_ALL_MODEL_OAUTH_PROVIDERS:
+        return "responses"
+    model_lower = model_id.lower()
+    if any(marker in model_lower for marker in RESPONSES_API_MODEL_MARKERS):
+        return "responses"
+    return str(metadata.get("mode") or "chat")
 
 
 def _entry_from_oauth_model(
