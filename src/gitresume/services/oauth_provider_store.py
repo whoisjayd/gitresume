@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, SecretStr
 from gitresume.core.crypto import StringEncryptor
 
 SUPPORTED_OAUTH_PROVIDERS = ("github_copilot", "chatgpt")
-ConnectionType = Literal["manual_token"]
+ConnectionType = Literal["manual_token", "device_auth"]
 
 
 class OAuthProviderCredentialInput(BaseModel):
@@ -18,6 +18,7 @@ class OAuthProviderCredentialInput(BaseModel):
     refresh_token: SecretStr | None = Field(default=None, exclude=True, repr=False)
     account_label: str | None = None
     expires_at: datetime | None = None
+    connection_type: ConnectionType = "manual_token"
 
 
 class OAuthTokenRefreshResult(BaseModel):
@@ -209,9 +210,7 @@ class RedisOAuthProviderStore:
         executable = any(account.executable for account in accounts)
         first = accounts[0] if accounts else None
         status_text = (
-            "Connected with server-stored manual OAuth token account(s). "
-            "Browser device-code connection is not exposed by the current in-process "
-            "LiteLLM integration."
+            "Connected with server-stored OAuth account(s)."
             if executable
             else f"OAuth account for {provider} is expired; refresh required."
         )
@@ -219,7 +218,7 @@ class RedisOAuthProviderStore:
             provider=provider,
             connected=connected,
             executable=executable,
-            supports_device_code=False,
+            supports_device_code=True,
             connection_type=first.connection_type if first else None,
             account_label=first.account_label if first else None,
             connected_at=first.connected_at if first else None,
@@ -260,9 +259,7 @@ class RedisOAuthProviderStore:
             return None
         return self._decode_account(raw)
 
-    async def _save_account(
-        self, scope: str, provider: str, account: dict[str, object]
-    ) -> None:
+    async def _save_account(self, scope: str, provider: str, account: dict[str, object]) -> None:
         await self.redis.hset(
             self._accounts_key(scope, provider),
             mapping={str(account["id"]): json.dumps(account)},
@@ -289,7 +286,7 @@ class RedisOAuthProviderStore:
             ),
             "encrypted_refresh_token": self._encrypt_optional(credential.refresh_token),
             "account_label": credential.account_label,
-            "connection_type": "manual_token",
+            "connection_type": credential.connection_type,
             "connected_at": now.isoformat(),
             "expires_at": self._datetime_to_str(credential.expires_at),
             "last_refreshed_at": None,
@@ -302,8 +299,7 @@ class RedisOAuthProviderStore:
         if "accounts" in payload and isinstance(payload["accounts"], list):
             provider = str(payload["provider"])
             return [
-                self._normalize_legacy_account(provider, account)
-                for account in payload["accounts"]
+                self._normalize_legacy_account(provider, account) for account in payload["accounts"]
             ]
         provider = str(payload["provider"])
         return [self._normalize_legacy_account(provider, payload)]
@@ -373,10 +369,8 @@ class RedisOAuthProviderStore:
         return OAuthProviderAccount(
             id=str(payload["id"]),
             provider=str(payload["provider"]),
-            connection_type="manual_token",
-            account_label=(
-                str(payload["account_label"]) if payload.get("account_label") else None
-            ),
+            connection_type=str(payload.get("connection_type") or "manual_token"),
+            account_label=(str(payload["account_label"]) if payload.get("account_label") else None),
             connected_at=connected_at,
             expires_at=expires_at,
             last_refreshed_at=self._parse_datetime(payload.get("last_refreshed_at")),
@@ -415,12 +409,8 @@ def disconnected_status(provider: str, reason: str | None = None) -> OAuthProvid
         provider=provider,
         connected=False,
         executable=False,
-        supports_device_code=False,
+        supports_device_code=True,
         connection_type=None,
         accounts=[],
-        status=reason
-        or (
-            f"Connect {provider} with a manually configured server-stored OAuth token. "
-            "Browser device-code flow is not exposed by the current in-process LiteLLM integration."
-        ),
+        status=reason or (f"Connect {provider} with device authorization."),
     )

@@ -12,3 +12,8 @@ env.yaml
 .dolt/
 *.db
 .beads-credential-key
+.codex
+.claude
+.pytest_cache/
+.ruff_cache/
+.tmp

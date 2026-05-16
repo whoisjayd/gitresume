@@ -180,7 +180,6 @@ def _entry_from_metadata(model_id: str, metadata: dict[str, Any]) -> ModelCatalo
     mode = _normalize_mode(metadata.get("mode"), model_id=model_id, provider=provider)
     if mode is None:
         return None
-    is_available = mode != "responses"
     return ModelCatalogEntry(
         id=model_id,
         provider=provider,
@@ -189,8 +188,8 @@ def _entry_from_metadata(model_id: str, metadata: dict[str, Any]) -> ModelCatalo
         auth_type="api_key",
         supports_oauth=False,
         requires_api_key=True,
-        is_available=is_available,
-        status=None if is_available else "Responses API execution is not implemented yet.",
+        is_available=True,
+        status=None,
         context_window=_context_window(metadata),
     )
 

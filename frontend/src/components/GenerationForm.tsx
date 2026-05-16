@@ -5,24 +5,28 @@ import type { CreateGenerationInput, ModelEntry, ProviderKeyMetadata } from "../
 type Props = {
   isSubmitting: boolean;
   models: ModelEntry[];
+  selectedProvider: string;
   selectedModel: string;
   providerKeys: ProviderKeyMetadata[];
   guidedAnalysisEnabled: boolean;
   contributionAnalysisEnabled: boolean;
   contributionAnalysisDefaultDays: number;
   onSubmit: (input: CreateGenerationInput) => Promise<boolean>;
+  onSelectedProviderChange: (provider: string) => void;
   onSelectedModelChange: (model: string) => void;
 };
 
 export function GenerationForm({
   isSubmitting,
   models,
+  selectedProvider,
   selectedModel,
   providerKeys,
   guidedAnalysisEnabled,
   contributionAnalysisEnabled,
   contributionAnalysisDefaultDays,
   onSubmit,
+  onSelectedProviderChange,
   onSelectedModelChange,
 }: Props) {
   const [repoUrl, setRepoUrl] = useState("");
@@ -35,6 +39,10 @@ export function GenerationForm({
   const [analysisAuthor, setAnalysisAuthor] = useState("");
   const [analysisDays, setAnalysisDays] = useState(String(contributionAnalysisDefaultDays));
   const availableModels = models.filter((model) => model.isAvailable);
+  const availableProviders = Array.from(
+    new Set(availableModels.map((model) => model.provider)),
+  ).sort((first, second) => first.localeCompare(second));
+  const providerModels = availableModels.filter((model) => model.provider === selectedProvider);
   const selectedModelProvider = models.find((model) => model.id === selectedModel)?.provider ?? null;
   const compatibleKeys = providerKeys.filter((key) => {
     if (selectedModelProvider && key.provider !== selectedModelProvider) {
@@ -63,7 +71,7 @@ export function GenerationForm({
           repoUrl: repoUrl.trim(),
           jobDescription: showJobDescription && jobDescription.trim() ? jobDescription.trim() : null,
           githubToken: githubToken.trim() ? githubToken.trim() : null,
-          model: selectedModel || availableModels[0]?.id || null,
+          model: selectedModel || providerModels[0]?.id || availableModels[0]?.id || null,
           providerKeyId: providerKeyId || null,
           providerApiKey: providerApiKey.trim() ? providerApiKey.trim() : null,
           ...(canUseAuthorScope && useAuthorScope && analysisAuthor.trim()
@@ -92,37 +100,35 @@ export function GenerationForm({
         />
       </label>
 
-      <label className="field">
-        <span>Generation model</span>
-        <select
-          value={selectedModel}
-          onChange={(event) => onSelectedModelChange(event.target.value)}
-          aria-label="Generation model"
-        >
-          {models.map((model) => (
-            <option key={model.id} value={model.id} disabled={!model.isAvailable}>
-              {model.displayName}{model.isAvailable ? "" : " unavailable"}
-            </option>
-          ))}
-        </select>
-        <small>OAuth and Responses API models remain visible in the browser, but unavailable models cannot be selected.</small>
-      </label>
-
-      <button className="text-button" type="button" onClick={() => setShowJobDescription((value) => !value)}>
-        {showJobDescription ? "Remove job description" : "Add job description"}
-      </button>
-
-      {showJobDescription ? (
+      <div className="model-picker-row">
         <label className="field">
-          <span>Job description</span>
-          <textarea
-            value={jobDescription}
-            onChange={(event) => setJobDescription(event.target.value)}
-            placeholder="Paste a target role to tailor the resume bullets."
-            rows={5}
-          />
+          <span>Provider</span>
+          <select
+            value={selectedProvider}
+            onChange={(event) => onSelectedProviderChange(event.target.value)}
+            aria-label="Model provider"
+          >
+            {availableProviders.map((provider) => (
+              <option key={provider} value={provider}>{providerLabel(provider)}</option>
+            ))}
+          </select>
         </label>
-      ) : null}
+        <label className="field">
+          <span>Model</span>
+          <select
+            value={selectedModel}
+            onChange={(event) => onSelectedModelChange(event.target.value)}
+            aria-label="Generation model"
+          >
+            {providerModels.map((model) => (
+              <option key={model.id} value={model.id}>{model.displayName}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <details className="settings-disclosure">
+        <summary>Credentials and advanced options</summary>
 
       <label className="field">
         <span><KeyRound size={16} aria-hidden="true" /> GitHub token</span>
@@ -150,13 +156,34 @@ export function GenerationForm({
 
       <label className="field">
         <span>Saved provider key</span>
-        <select value={providerKeyId} onChange={(event) => setProviderKeyId(event.target.value)} aria-label="Saved provider key">
+        <select
+          value={providerKeyId}
+          onChange={(event) => setProviderKeyId(event.target.value)}
+          aria-label="Saved provider key"
+        >
           <option value="">Use environment or ephemeral key</option>
           {compatibleKeys.map((key) => (
             <option key={key.id} value={key.id}>{key.label} ({key.provider})</option>
           ))}
         </select>
       </label>
+      </details>
+
+      <button className="text-button" type="button" onClick={() => setShowJobDescription((value) => !value)}>
+        {showJobDescription ? "Remove job description" : "Add job description"}
+      </button>
+
+      {showJobDescription ? (
+        <label className="field">
+          <span>Job description</span>
+          <textarea
+            value={jobDescription}
+            onChange={(event) => setJobDescription(event.target.value)}
+            placeholder="Paste a target role to tailor the resume bullets."
+            rows={5}
+          />
+        </label>
+      ) : null}
 
       {canUseAuthorScope ? (
         <fieldset className="field">
@@ -199,4 +226,25 @@ export function GenerationForm({
       </button>
     </form>
   );
+}
+
+function providerLabel(provider: string): string {
+  const labels: Record<string, string> = {
+    anthropic: "Anthropic",
+    azure: "Azure OpenAI",
+    bedrock: "AWS Bedrock",
+    chatgpt: "ChatGPT",
+    cloudflare: "Cloudflare Workers AI",
+    deepseek: "DeepSeek",
+    gemini: "Gemini",
+    github_copilot: "GitHub Copilot",
+    groq: "Groq",
+    mistral: "Mistral",
+    moonshot: "Kimi / Moonshot",
+    openai: "OpenAI",
+    openrouter: "OpenRouter",
+    vertex_ai: "Google Vertex AI",
+    xai: "xAI / Grok",
+  };
+  return labels[provider] ?? provider;
 }

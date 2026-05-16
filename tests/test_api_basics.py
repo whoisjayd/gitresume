@@ -13,6 +13,7 @@ def make_client() -> TestClient:
         session_secret_key="test-secret",
         allowed_hosts=["testserver"],
         frontend_origin="http://testserver",
+        redis_url=None,
     )
     return TestClient(create_app(settings))
 
@@ -56,6 +57,20 @@ def test_settings_parses_comma_separated_allowed_hosts_env(monkeypatch: pytest.M
     settings = Settings()
 
     assert settings.allowed_hosts == ["localhost", "127.0.0.1", "api"]
+
+
+def test_settings_treats_blank_optional_session_cookie_https_env_as_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SESSION_COOKIE_HTTPS_ONLY", "")
+    monkeypatch.setenv(
+        "SESSION_SECRET_KEY", "release-smoke-secret-with-more-than-thirty-two-characters"
+    )
+    monkeypatch.setenv("ENVIRONMENT", "production")
+
+    settings = Settings()
+
+    assert settings.session_cookie_https_only is None
 
 
 @pytest.mark.parametrize(

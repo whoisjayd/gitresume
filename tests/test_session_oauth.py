@@ -12,13 +12,19 @@ from gitresume.main import create_app
 
 
 def make_client(**overrides: Any) -> TestClient:
-    settings = Settings(
-        environment="test",
-        session_secret_key="test-secret",
-        allowed_hosts=["testserver"],
-        frontend_origin="http://testserver",
+    settings_values = {
+        "environment": "test",
+        "session_secret_key": "test-secret",
+        "allowed_hosts": ["testserver"],
+        "frontend_origin": "http://testserver",
+        "redis_url": None,
+        "settings_encryption_key": None,
+        "github_client_secret": None,
+        "callback_url": None,
+        "session_cookie_https_only": None,
         **overrides,
-    )
+    }
+    settings = Settings(**settings_values)
     return TestClient(create_app(settings))
 
 
@@ -31,6 +37,9 @@ def make_production_client(**overrides: Any) -> TestClient:
         github_client_id="client-id",
         github_client_secret="client-secret",
         callback_url="https://example.com/api/session/callback",
+        redis_url=None,
+        settings_encryption_key=None,
+        session_cookie_https_only=True,
         **overrides,
     )
     return TestClient(create_app(settings))

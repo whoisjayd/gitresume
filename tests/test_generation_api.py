@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
 
+from fakeredis.aioredis import FakeRedis
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
@@ -190,6 +191,7 @@ def make_client(
         **settings_overrides,
     )
     app = create_app(settings)
+    app.state.redis = FakeRedis(decode_responses=True)
     app.dependency_overrides[get_generation_state_service] = lambda: state_service
     app.dependency_overrides[get_generation_task_dispatcher] = lambda: dispatcher
     return TestClient(app)

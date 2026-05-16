@@ -111,7 +111,7 @@ export type DashboardSettings = {
 export type OAuthProviderAccount = {
   id: string;
   provider: string;
-  connectionType: "manual_token";
+  connectionType: "manual_token" | "device_auth";
   accountLabel?: string | null;
   connectedAt: string;
   expiresAt?: string | null;
@@ -127,11 +127,28 @@ export type OAuthProviderStatus = {
   connected: boolean;
   executable: boolean;
   supportsDeviceCode: boolean;
-  connectionType?: "manual_token" | null;
+  connectionType?: "manual_token" | "device_auth" | null;
   accountLabel?: string | null;
   connectedAt?: string | null;
   accounts: OAuthProviderAccount[];
   status?: string | null;
+};
+
+export type OAuthLoginStartResponse = {
+  jobId: string;
+  statusUrl: string;
+};
+
+export type OAuthLoginJob = {
+  jobId: string;
+  provider: string;
+  status: "queued" | "running" | "code_pending" | "succeeded" | "failed" | string;
+  statusUrl: string;
+  message: string;
+  verificationUri?: string | null;
+  userCode?: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 async function readJson<T>(response: Response): Promise<T> {
@@ -231,6 +248,17 @@ export async function connectOAuthProvider(input: { provider: string; accessToke
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ accessToken: input.accessToken, refreshToken: input.refreshToken ?? null, expiresAt: input.expiresAt ?? null, accountLabel: input.accountLabel ?? null }),
   }));
+}
+
+export async function startOAuthProviderLogin(provider: string): Promise<OAuthLoginStartResponse> {
+  return readJson<OAuthLoginStartResponse>(await fetch(`/api/oauth-providers/${provider}/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  }));
+}
+
+export async function getOAuthProviderLoginJob(statusUrl: string): Promise<OAuthLoginJob> {
+  return readJson<OAuthLoginJob>(await fetch(statusUrl));
 }
 
 export async function updateOAuthProviderAccount(input: { provider: string; accountId: string; accessToken: string; refreshToken?: string | null; expiresAt?: string | null }): Promise<OAuthProviderStatus> {

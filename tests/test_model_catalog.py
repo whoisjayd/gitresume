@@ -175,6 +175,8 @@ def test_models_endpoint_returns_camel_case_catalog_entries() -> None:
         session_secret_key="test-secret",
         allowed_hosts=["testserver"],
         frontend_origin="http://testserver",
+        redis_url=None,
+        settings_encryption_key=None,
     )
     client = TestClient(create_app(settings))
 

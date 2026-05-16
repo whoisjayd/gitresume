@@ -1,12 +1,12 @@
 import { AlertTriangle, RotateCcw, TerminalSquare } from "lucide-react";
 import type { FormEvent } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  connectOAuthProvider,
   createGeneration,
   deleteProviderKey,
   disconnectOAuthProvider,
   disconnectOAuthProviderAccount,
+  getOAuthProviderLoginJob,
   getDashboardSettings,
   getSession,
   listModels,
@@ -14,11 +14,12 @@ import {
   logoutSession,
   saveProviderKey,
   setDefaultModel,
-  updateOAuthProviderAccount,
+  startOAuthProviderLogin,
   type CreateGenerationInput,
   type CreateGenerationResponse,
   type DashboardSettings,
   type ModelEntry,
+  type OAuthLoginJob,
   type OAuthProviderStatus,
   type SessionInfo,
 } from "./api/generations";
@@ -43,6 +44,7 @@ export default function App() {
   const [models, setModels] = useState<ModelEntry[]>([]);
   const [oauthProviders, setOauthProviders] = useState<OAuthProviderStatus[]>([]);
   const [dashboardSettings, setDashboardSettings] = useState<DashboardSettings | null>(null);
+  const [selectedProvider, setSelectedProvider] = useState("openai");
   const [selectedModel, setSelectedModel] = useState("");
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const stream = useGenerationStream(generation?.eventsUrl ?? null, generation?.statusUrl ?? null);
@@ -65,7 +67,9 @@ export default function App() {
         setOauthProviders(providerStatuses);
         setDashboardSettings(settings);
         const fallback = modelEntries.find((model) => model.isAvailable)?.id ?? "";
-        setSelectedModel(settings.defaultModel || fallback);
+        const initialModel = settings.defaultModel || fallback;
+        setSelectedModel(initialModel);
+        setSelectedProvider(modelEntries.find((model) => model.id === initialModel)?.provider ?? "openai");
       })
       .catch((reason) => {
         if (!active) return;
@@ -73,8 +77,6 @@ export default function App() {
       });
     return () => { active = false; };
   }, []);
-
-  const availableModelCount = useMemo(() => models.filter((model) => model.isAvailable).length, [models]);
 
   async function submit(input: CreateGenerationInput): Promise<boolean> {
     setIsSubmitting(true);
@@ -99,6 +101,15 @@ export default function App() {
     const fallback = modelEntries.find((model) => model.isAvailable)?.id ?? "";
     if (!modelEntries.some((model) => model.id === selectedModel && model.isAvailable)) {
       setSelectedModel(fallback);
+      setSelectedProvider(modelEntries.find((model) => model.id === fallback)?.provider ?? "openai");
+    }
+  }
+
+  function updateSelectedProvider(provider: string) {
+    setSelectedProvider(provider);
+    const firstProviderModel = models.find((model) => model.provider === provider && model.isAvailable);
+    if (firstProviderModel) {
+      setSelectedModel(firstProviderModel.id);
     }
   }
 
@@ -130,7 +141,6 @@ export default function App() {
         <nav aria-label="Primary navigation">
           <a href="#generate">Generate</a>
           <a href="#dashboard">Dashboard</a>
-          <a href="#models">Models</a>
           <a href="#settings">Settings</a>
           <a href="/docs">Docs</a>
           <a href={REPO_URL}>GitHub repo</a>
@@ -145,29 +155,24 @@ export default function App() {
         <div>
           <p className="eyebrow">GitResume dashboard</p>
           <h1 id="page-title">Turn a repo into a resume signal deck.</h1>
-          <p className="hero-copy">A self-hostable cockpit for repository analysis, model selection, GitHub access, and BYOK configuration.</p>
+          <p className="hero-copy">Paste a GitHub repo, pick a provider and model, then generate resume-ready bullets and interview notes.</p>
           <SessionPanel session={session} onLogout={logout} />
         </div>
       </section>
 
       {settingsError ? <section className="error-panel" role="alert"><AlertTriangle /> <p>{settingsError}</p></section> : null}
 
-      <section className="metric-grid" aria-label="Dashboard summary">
-        <article><span>{models.length}</span><p>Total text models</p></article>
-        <article><span>{availableModelCount}</span><p>Selectable models</p></article>
-        <article><span>{dashboardSettings?.providerKeys.length ?? 0}</span><p>Saved BYOK keys</p></article>
-        <article><span>{session?.appMode ?? "..."}</span><p>App mode</p></article>
-      </section>
-
       <div className="workspace-grid" id="generate">
         <GenerationForm
           isSubmitting={isSubmitting || stream.isStreaming}
           models={models}
+          selectedProvider={selectedProvider}
           selectedModel={selectedModel}
           providerKeys={dashboardSettings?.providerKeys ?? []}
           guidedAnalysisEnabled={dashboardSettings?.guidedAnalysisEnabled ?? false}
           contributionAnalysisEnabled={dashboardSettings?.contributionAnalysisEnabled ?? false}
           contributionAnalysisDefaultDays={dashboardSettings?.contributionAnalysisDefaultDays ?? 300}
+          onSelectedProviderChange={updateSelectedProvider}
           onSelectedModelChange={setSelectedModel}
           onSubmit={submit}
         />
@@ -189,7 +194,6 @@ export default function App() {
 
       {result ? <ResultPanel result={result} /> : null}
 
-      <ModelBrowser models={models} />
       <OAuthProviderPanel providers={oauthProviders} onRefresh={refreshModelsAndOauthProviders} />
       <SettingsPanel
         settings={dashboardSettings}
@@ -226,61 +230,28 @@ function SessionPanel({ session, onLogout }: { session: SessionInfo | null; onLo
   );
 }
 
-function ModelBrowser({ models }: { models: ModelEntry[] }) {
-  return (
-    <section className="console-card model-browser" id="models" aria-labelledby="models-title">
-      <div className="section-kicker">Model browser</div>
-      <h2 id="models-title">LiteLLM text model catalog</h2>
-      <div className="model-grid">
-        {models.map((model) => (
-          <article key={model.id} className={model.isAvailable ? "" : "muted-card"}>
-            <h3>{model.displayName}</h3>
-            <p>{model.id}</p>
-            <div className="chip-row">
-              <span className="chip">{model.provider}</span>
-              <span className="chip">{model.mode}</span>
-              <span className="chip">{model.authType}</span>
-              <span className="chip">{model.isAvailable ? "Selectable" : "Unavailable"}</span>
-            </div>
-            {model.status ? <small>{model.status}</small> : null}
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function OAuthProviderPanel({ providers, onRefresh }: {
   providers: OAuthProviderStatus[];
   onRefresh: () => Promise<void>;
 }) {
-  const [tokens, setTokens] = useState<Record<string, string>>({});
-  const [refreshTokens, setRefreshTokens] = useState<Record<string, string>>({});
-  const [expiresAt, setExpiresAt] = useState<Record<string, string>>({});
-  const [labels, setLabels] = useState<Record<string, string>>({});
-  const [replacementTokens, setReplacementTokens] = useState<Record<string, string>>({});
-  const [replacementRefreshTokens, setReplacementRefreshTokens] = useState<Record<string, string>>({});
-  const [replacementExpiresAt, setReplacementExpiresAt] = useState<Record<string, string>>({});
+  const [jobs, setJobs] = useState<Record<string, OAuthLoginJob>>({});
   const [busyProvider, setBusyProvider] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function connect(provider: string) {
+  async function startLogin(provider: string) {
     setBusyProvider(provider);
     setError(null);
     try {
-      await connectOAuthProvider({
-        provider,
-        accessToken: tokens[provider] ?? "",
-        refreshToken: refreshTokens[provider]?.trim() || null,
-        expiresAt: expiresAt[provider] || null,
-        accountLabel: labels[provider]?.trim() || null,
+      const started = await startOAuthProviderLogin(provider);
+      const job = await pollOAuthLoginJob(started.statusUrl, (latest) => {
+        setJobs((current) => ({ ...current, [provider]: latest }));
       });
-      setTokens((current) => ({ ...current, [provider]: "" }));
-      setRefreshTokens((current) => ({ ...current, [provider]: "" }));
-      setExpiresAt((current) => ({ ...current, [provider]: "" }));
-      await onRefresh();
+      setJobs((current) => ({ ...current, [provider]: job }));
+      if (job.status === "succeeded") {
+        await onRefresh();
+      }
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not connect OAuth provider.");
+      setError(reason instanceof Error ? reason.message : "Could not start OAuth login.");
     } finally {
       setBusyProvider(null);
     }
@@ -319,46 +290,25 @@ function OAuthProviderPanel({ providers, onRefresh }: {
     }
   }
 
-  async function refreshAccount(provider: string, accountId: string, busyKey: string) {
-    setBusyProvider(busyKey);
-    setError(null);
-    try {
-      await updateOAuthProviderAccount({
-        provider,
-        accountId,
-        accessToken: replacementTokens[busyKey] ?? "",
-        refreshToken: replacementRefreshTokens[busyKey]?.trim() || null,
-        expiresAt: replacementExpiresAt[busyKey] || null,
-      });
-      setReplacementTokens((current) => ({ ...current, [busyKey]: "" }));
-      setReplacementRefreshTokens((current) => ({ ...current, [busyKey]: "" }));
-      setReplacementExpiresAt((current) => ({ ...current, [busyKey]: "" }));
-      await onRefresh();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not refresh OAuth account.");
-    } finally {
-      setBusyProvider(null);
-    }
-  }
-
   return (
     <section className="console-card settings-panel" aria-labelledby="oauth-providers-title">
       <div className="section-kicker">OAuth execution</div>
       <h2 id="oauth-providers-title">OAuth model providers</h2>
-      <p className="notice">Manual tokens are encrypted server-side. Browser device-code flow is not exposed by the current LiteLLM integration.</p>
+      <p className="notice">Connect ChatGPT or GitHub Copilot with device authorization. Tokens are stored encrypted server-side and never shown here.</p>
       {error ? <p className="notice" role="alert">{error}</p> : null}
       <div className="saved-key-list">
         {providers.map((provider) => (
           <article key={provider.provider}>
             <div>
-              <strong>{provider.provider}</strong>
+              <strong>{oauthProviderLabel(provider.provider)}</strong>
               <span>{provider.connected ? "Connected" : "Not connected"}{provider.accountLabel ? ` · ${provider.accountLabel}` : ""}</span>
               {provider.status ? <small>{provider.status}</small> : null}
             </div>
+            {jobs[provider.provider] ? <OAuthLoginJobPanel job={jobs[provider.provider]} /> : null}
             {provider.connected ? (
               <div className="settings-form">
                 <button type="button" onClick={() => void disconnect(provider.provider)} disabled={busyProvider === provider.provider}>
-                  Disconnect {provider.provider}
+                  Disconnect {oauthProviderLabel(provider.provider)}
                 </button>
                 {(provider.accounts ?? []).map((account) => {
                   const label = account.accountLabel || account.id;
@@ -371,21 +321,6 @@ function OAuthProviderPanel({ providers, onRefresh }: {
                           <span>{account.executable ? "Executable" : "Refresh required"}</span>
                           {account.status ? <small>{account.status}</small> : null}
                         </div>
-                        <label className="field">
-                          <span>Replacement token for {label}</span>
-                          <input type="password" value={replacementTokens[busyKey] ?? ""} onChange={(event) => setReplacementTokens((current) => ({ ...current, [busyKey]: event.target.value }))} autoComplete="off" disabled={busyProvider === busyKey} />
-                        </label>
-                        <label className="field">
-                          <span>Replacement refresh token for {label}</span>
-                          <input type="password" value={replacementRefreshTokens[busyKey] ?? ""} onChange={(event) => setReplacementRefreshTokens((current) => ({ ...current, [busyKey]: event.target.value }))} autoComplete="off" disabled={busyProvider === busyKey} />
-                        </label>
-                        <label className="field">
-                          <span>Replacement expiry for {label}</span>
-                          <input type="datetime-local" value={replacementExpiresAt[busyKey] ?? ""} onChange={(event) => setReplacementExpiresAt((current) => ({ ...current, [busyKey]: event.target.value }))} disabled={busyProvider === busyKey} />
-                        </label>
-                        <button type="button" onClick={() => void refreshAccount(provider.provider, account.id, busyKey)} disabled={busyProvider === busyKey || !(replacementTokens[busyKey] ?? "").trim()}>
-                          Refresh {label}
-                        </button>
                         <button type="button" onClick={() => void disconnectAccount(provider.provider, account.id, busyKey)} disabled={busyProvider === busyKey}>
                           Disconnect {label}
                         </button>
@@ -395,32 +330,46 @@ function OAuthProviderPanel({ providers, onRefresh }: {
                 })}
               </div>
             ) : null}
-            <div className="settings-form">
-              <label className="field">
-                <span>{provider.provider} account label</span>
-                <input value={labels[provider.provider] ?? ""} onChange={(event) => setLabels((current) => ({ ...current, [provider.provider]: event.target.value }))} disabled={busyProvider === provider.provider} />
-              </label>
-              <label className="field">
-                <span>{provider.provider} manual token</span>
-                <input type="password" value={tokens[provider.provider] ?? ""} onChange={(event) => setTokens((current) => ({ ...current, [provider.provider]: event.target.value }))} autoComplete="off" disabled={busyProvider === provider.provider} />
-              </label>
-              <label className="field">
-                <span>{provider.provider} refresh token</span>
-                <input type="password" value={refreshTokens[provider.provider] ?? ""} onChange={(event) => setRefreshTokens((current) => ({ ...current, [provider.provider]: event.target.value }))} autoComplete="off" disabled={busyProvider === provider.provider} />
-              </label>
-              <label className="field">
-                <span>{provider.provider} token expiry</span>
-                <input type="datetime-local" value={expiresAt[provider.provider] ?? ""} onChange={(event) => setExpiresAt((current) => ({ ...current, [provider.provider]: event.target.value }))} disabled={busyProvider === provider.provider} />
-              </label>
-              <button type="button" onClick={() => void connect(provider.provider)} disabled={busyProvider === provider.provider || !(tokens[provider.provider] ?? "").trim()}>
-                Connect {provider.provider}
-              </button>
-            </div>
+            <button type="button" onClick={() => void startLogin(provider.provider)} disabled={busyProvider === provider.provider}>
+              {busyProvider === provider.provider ? "Waiting for device login..." : `Connect ${oauthProviderLabel(provider.provider)}`}
+            </button>
           </article>
         ))}
       </div>
     </section>
   );
+}
+
+function OAuthLoginJobPanel({ job }: { job: OAuthLoginJob }) {
+  return (
+    <div className="oauth-job-panel">
+      <strong>{job.status.replaceAll("_", " ")}</strong>
+      <span>{job.message}</span>
+      {job.verificationUri ? <a href={job.verificationUri} target="_blank" rel="noreferrer">Open device login</a> : null}
+      {job.userCode ? <code>{job.userCode}</code> : null}
+    </div>
+  );
+}
+
+async function pollOAuthLoginJob(
+  statusUrl: string,
+  onUpdate: (job: OAuthLoginJob) => void,
+): Promise<OAuthLoginJob> {
+  let latest = await getOAuthProviderLoginJob(statusUrl);
+  onUpdate(latest);
+  for (let attempt = 0; attempt < 15 * 60; attempt += 1) {
+    if (["succeeded", "failed"].includes(latest.status)) {
+      return latest;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 1000));
+    latest = await getOAuthProviderLoginJob(statusUrl);
+    onUpdate(latest);
+  }
+  return latest;
+}
+
+function oauthProviderLabel(provider: string): string {
+  return provider === "chatgpt" ? "ChatGPT" : "GitHub Copilot";
 }
 
 function providerStatusAccountLabel(providers: OAuthProviderStatus[], providerName: string, accountId: string): string | null {

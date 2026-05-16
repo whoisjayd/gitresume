@@ -249,6 +249,26 @@ h1 {
 
 .field small { color: var(--muted); }
 
+.model-picker-row {
+  display: grid;
+  grid-template-columns: minmax(12rem, 0.7fr) minmax(16rem, 1.3fr);
+  gap: 0.8rem;
+}
+
+.settings-disclosure {
+  margin-bottom: 1rem;
+  border: 1px solid var(--line);
+  background: var(--panel-strong);
+  padding: 0.8rem;
+}
+
+.settings-disclosure summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.settings-disclosure .field:first-of-type { margin-top: 1rem; }
+
 fieldset.field {
   border: 1px solid var(--line);
   padding: 1rem;
@@ -350,7 +370,7 @@ textarea { resize: vertical; }
 
 .result-panel { margin-top: clamp(1rem, 3vw, 1.5rem); }
 
-.model-browser, .settings-panel {
+.settings-panel {
   margin-top: clamp(1rem, 3vw, 1.5rem);
   padding: clamp(1rem, 3vw, 1.5rem);
 }
@@ -361,7 +381,7 @@ textarea { resize: vertical; }
   gap: 0.8rem;
 }
 
-.model-grid article, .saved-key-list article {
+.saved-key-list article {
   border: 1px solid var(--line);
   background: var(--panel-strong);
   padding: 1rem;
@@ -373,11 +393,30 @@ textarea { resize: vertical; }
 .notice { border-left: 4px solid var(--amber); padding-left: 0.8rem; color: var(--muted); }
 
 .saved-key-list { display: grid; gap: 0.7rem; margin: 1rem 0; }
-.saved-key-list article { display: flex; justify-content: space-between; gap: 1rem; align-items: center; }
+.saved-key-list article { display: grid; grid-template-columns: 1fr auto; gap: 1rem; align-items: center; }
 .saved-key-list div { display: grid; gap: 0.2rem; }
 .saved-key-list span { color: var(--muted); }
 .settings-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.8rem; }
 .settings-form .primary-action { grid-column: 1 / -1; }
+
+.oauth-job-panel {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.45rem;
+  border-left: 4px solid var(--cyan);
+  padding-left: 0.8rem;
+  color: var(--muted);
+}
+
+.oauth-job-panel code {
+  width: fit-content;
+  border: 1px solid var(--line);
+  padding: 0.45rem 0.65rem;
+  color: var(--ink);
+  background: var(--input-bg);
+  font-size: 1.1rem;
+  letter-spacing: 0.08em;
+}
 
 .site-footer {
   display: flex;
@@ -434,7 +473,7 @@ textarea { resize: vertical; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 820px) {
-  .hero, .workspace-grid, .error-panel, .metric-grid, .settings-form { grid-template-columns: 1fr; }
+  .hero, .workspace-grid, .error-panel, .settings-form, .model-picker-row { grid-template-columns: 1fr; }
   .topbar { align-items: stretch; flex-direction: column; }
   .result-header { flex-direction: column; }
   h1 { max-width: 10ch; }

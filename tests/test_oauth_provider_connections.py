@@ -12,6 +12,11 @@ from pydantic import SecretStr
 from gitresume.core.config import Settings
 from gitresume.core.crypto import StringEncryptor
 from gitresume.main import create_app
+from gitresume.services.oauth_login_service import (
+    load_litellm_oauth_credential,
+    parse_device_auth_output,
+    sanitize_oauth_output,
+)
 
 SETTINGS_KEY = "settings encryption passphrase with enough entropy"
 
@@ -40,6 +45,65 @@ def login(client: TestClient, github_user_id: str = "12345") -> None:
     data = b64encode(json.dumps(payload).encode("utf-8"))
     cookie = TimestampSigner("test-secret").sign(data).decode("utf-8")
     client.cookies.set("session", cookie)
+
+
+def test_device_auth_stdout_parser_extracts_link_and_code_without_tokens() -> None:
+    output = "Open https://github.com/login/device and enter code ABCD-1234 token=secret"
+
+    parsed = parse_device_auth_output(sanitize_oauth_output(output))
+
+    assert parsed == {
+        "verification_uri": "https://github.com/login/device",
+        "user_code": "ABCD-1234",
+    }
+    assert "secret" not in sanitize_oauth_output(output)
+
+
+def test_litellm_chatgpt_token_file_imports_known_fields(tmp_path) -> None:
+    auth_dir = tmp_path / "chatgpt"
+    auth_dir.mkdir()
+    (auth_dir / "auth.json").write_text(
+        json.dumps(
+            {
+                "access_token": "chatgpt-access-token",
+                "refresh_token": "chatgpt-refresh-token",
+                "expires_at": 1893456000,
+                "account_id": "acct-chatgpt",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    credential = load_litellm_oauth_credential("chatgpt", tmp_path)
+
+    assert credential.provider == "chatgpt"
+    assert credential.access_token.get_secret_value() == "chatgpt-access-token"
+    assert credential.refresh_token is not None
+    assert credential.refresh_token.get_secret_value() == "chatgpt-refresh-token"
+    assert credential.account_label == "acct-chatgpt"
+    assert credential.expires_at is not None
+
+
+def test_litellm_copilot_token_file_imports_known_fields(tmp_path) -> None:
+    auth_dir = tmp_path / "github_copilot"
+    auth_dir.mkdir()
+    (auth_dir / "api-key.json").write_text(
+        json.dumps(
+            {
+                "token": "copilot-token",
+                "expires_at": 1893456000,
+                "sku": "copilot-pro",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    credential = load_litellm_oauth_credential("github_copilot", tmp_path)
+
+    assert credential.provider == "github_copilot"
+    assert credential.access_token.get_secret_value() == "copilot-token"
+    assert credential.account_label == "copilot-pro"
+    assert credential.expires_at is not None
 
 
 @pytest.mark.asyncio

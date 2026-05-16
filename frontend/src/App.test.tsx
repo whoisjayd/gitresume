@@ -258,6 +258,22 @@ function mockFetch(options: MockFetchOptions = {}) {
       return new Response(JSON.stringify(oauthProviders), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
+    if (url === "/api/oauth-providers/github_copilot/login" && init?.method === "POST") {
+      if (options.oauthConnectError) {
+        return new Response(JSON.stringify(options.oauthConnectError), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ jobId: "oauth-job-1", statusUrl: "/api/oauth-providers/login-jobs/oauth-job-1" }), { status: 202, headers: { "Content-Type": "application/json" } });
+    }
+
+    if (url === "/api/oauth-providers/login-jobs/oauth-job-1") {
+      const account = githubAccount("acct-device", "Device Copilot");
+      oauthProviders = {
+        providers: oauthProviders.providers.map((provider) => provider.provider === "github_copilot" ? { ...provider, connected: true, executable: true, connectionType: "device_auth", accountLabel: account.accountLabel, accounts: [...(provider.accounts ?? []), account], status: "Connected with server-stored OAuth account(s)." } : provider),
+      };
+      models = connectedOauthModels;
+      return new Response(JSON.stringify({ jobId: "oauth-job-1", provider: "github_copilot", status: "succeeded", statusUrl: "/api/oauth-providers/login-jobs/oauth-job-1", message: "Connected github_copilot with device authorization.", verificationUri: "https://github.com/login/device", userCode: "ABCD-1234", createdAt: "2026-05-15T00:00:00Z", updatedAt: "2026-05-15T00:00:01Z" }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
     if (url === "/api/oauth-providers/github_copilot/connect" && init?.method === "POST") {
       if (options.oauthConnectError) {
         return new Response(JSON.stringify(options.oauthConnectError), { status: 400, headers: { "Content-Type": "application/json" } });
@@ -377,7 +393,7 @@ describe("GitResume SPA", () => {
 
     expect((await screen.findByRole("link", { name: /generate/i })).getAttribute("href")).toBe("#generate");
     expect(screen.getByRole("link", { name: /dashboard/i }).getAttribute("href")).toBe("#dashboard");
-    expect(screen.getByRole("link", { name: /models/i }).getAttribute("href")).toBe("#models");
+    expect(screen.queryByRole("link", { name: /models/i })).toBeNull();
     expect(screen.getByRole("link", { name: /settings/i }).getAttribute("href")).toBe("#settings");
     expect(screen.getAllByRole("link", { name: /docs/i })[0].getAttribute("href")).toBe("/docs");
     expect(screen.getAllByRole("link", { name: /github repo/i })[0].getAttribute("href")).toBe("https://github.com/WhoIsJayD/gitresume");
@@ -428,7 +444,7 @@ describe("GitResume SPA", () => {
     expect(screen.getByRole("link", { name: /login with github/i }).getAttribute("href")).toBe("/api/session/login?next=/dashboard");
   });
 
-  it("connects and disconnects OAuth providers without leaking manual tokens", async () => {
+  it("connects and disconnects OAuth providers with device authorization", async () => {
     const fetchMock = mockFetch();
     const confirm = vi.fn(() => true);
     vi.stubGlobal("confirm", confirm);
@@ -437,26 +453,20 @@ describe("GitResume SPA", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: /oauth model providers/i })).toBeTruthy();
-    expect(screen.getAllByText(/github_copilot/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/GitHub Copilot/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/not connected/i).length).toBeGreaterThan(0);
 
-    await user.type(screen.getByLabelText(/github_copilot manual token/i), "ghu-ui-secret-token");
-    await user.type(screen.getByLabelText(/github_copilot account label/i), "Work Copilot");
-    await user.click(screen.getByRole("button", { name: /^connect github_copilot$/i }));
+    await user.click(screen.getByRole("button", { name: /^connect GitHub Copilot$/i }));
 
-    await screen.findByRole("button", { name: /disconnect github_copilot/i });
+    await screen.findByRole("button", { name: /disconnect GitHub Copilot/i });
     await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => url === "/api/models")).toHaveLength(2));
-    expect(screen.queryByDisplayValue("ghu-ui-secret-token")).toBeNull();
-    expect(document.body.textContent).not.toContain("ghu-ui-secret-token");
+    expect(screen.getAllByText(/ABCD-1234/i).length).toBeGreaterThan(0);
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/oauth-providers/github_copilot/connect",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({ accessToken: "ghu-ui-secret-token", refreshToken: null, expiresAt: null, accountLabel: "Work Copilot" }),
-      }),
+      "/api/oauth-providers/github_copilot/login",
+      expect.objectContaining({ method: "POST" }),
     );
 
-    await user.click(screen.getByRole("button", { name: /disconnect github_copilot/i }));
+    await user.click(screen.getByRole("button", { name: /disconnect GitHub Copilot/i }));
 
     await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => url === "/api/models")).toHaveLength(3));
     expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/disconnect github_copilot/i));
@@ -466,7 +476,7 @@ describe("GitResume SPA", () => {
     );
   });
 
-  it("lists multiple OAuth accounts and refreshes or deletes one account", async () => {
+  it("lists multiple OAuth accounts and deletes one account", async () => {
     const fetchMock = mockFetch({
       oauthProviders: {
         providers: [
@@ -491,39 +501,6 @@ describe("GitResume SPA", () => {
     expect((await screen.findAllByText(/Work Copilot/i)).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Personal Copilot/i).length).toBeGreaterThan(0);
 
-    await user.type(screen.getByLabelText(/github_copilot manual token/i), "ghu-third-secret");
-    await user.type(screen.getByLabelText(/github_copilot refresh token/i), "refresh-third-secret");
-    await user.type(screen.getByLabelText(/github_copilot token expiry/i), "2026-06-01T12:30");
-    await user.type(screen.getByLabelText(/github_copilot account label/i), "Side Copilot");
-    await user.click(screen.getByRole("button", { name: /^connect github_copilot$/i }));
-
-    await waitFor(() => expect(screen.getAllByText(/Side Copilot/i).length).toBeGreaterThan(0));
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/oauth-providers/github_copilot/connect",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({ accessToken: "ghu-third-secret", refreshToken: "refresh-third-secret", expiresAt: "2026-06-01T12:30", accountLabel: "Side Copilot" }),
-      }),
-    );
-    expect(document.body.textContent).not.toContain("ghu-third-secret");
-    expect(document.body.textContent).not.toContain("refresh-third-secret");
-
-    await user.type(screen.getByLabelText(/replacement token for Work Copilot/i), "ghu-refresh-secret");
-    await user.type(screen.getByLabelText(/replacement refresh token for Work Copilot/i), "refresh-replacement-secret");
-    await user.type(screen.getByLabelText(/replacement expiry for Work Copilot/i), "2026-07-01T08:45");
-    await user.click(screen.getByRole("button", { name: /refresh Work Copilot/i }));
-
-    await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => url === "/api/models")).toHaveLength(3));
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/oauth-providers/github_copilot/accounts/acct-1",
-      expect.objectContaining({
-        method: "PUT",
-        body: JSON.stringify({ accessToken: "ghu-refresh-secret", refreshToken: "refresh-replacement-secret", expiresAt: "2026-07-01T08:45" }),
-      }),
-    );
-    expect(document.body.textContent).not.toContain("ghu-refresh-secret");
-    expect(document.body.textContent).not.toContain("refresh-replacement-secret");
-
     await user.click(screen.getByRole("button", { name: /disconnect Personal Copilot/i }));
 
     await waitFor(() => expect(screen.queryByText(/Personal Copilot/i)).toBeNull());
@@ -534,7 +511,7 @@ describe("GitResume SPA", () => {
     );
   });
 
-  it("renders model browser, disables unavailable models, and includes selected model and BYOK fields in generation body", async () => {
+  it("uses provider and model dropdowns and includes selected model and BYOK fields in generation body", async () => {
     const fetchMock = mockFetch();
     vi.stubGlobal("EventSource", MockEventSource);
     const user = userEvent.setup();
@@ -542,11 +519,12 @@ describe("GitResume SPA", () => {
     render(<App />);
 
     const modelSelect = await screen.findByLabelText(/generation model/i);
-    expect(within(modelSelect).getByRole("option", { name: /GPT 4.1 unavailable/i }).hasAttribute("disabled")).toBe(true);
-    expect(within(modelSelect).getByRole("option", { name: /Meta Llama 3.1 8B Instruct Free/i })).toBeTruthy();
-    expect(screen.getByText(/OAuth connection is not implemented yet/i)).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: /^model provider$/i })).toBeTruthy();
+    expect(within(modelSelect).getByRole("option", { name: /GPT 4O Mini/i })).toBeTruthy();
+    expect(screen.queryByText(/LiteLLM text model catalog/i)).toBeNull();
 
     await user.type(screen.getByLabelText(/repository url/i), "https://github.com/acme/rocket");
+    await user.click(screen.getByText(/credentials and advanced options/i));
     await user.type(screen.getByLabelText(/provider api key/i), "sk-provider-secret");
     await user.selectOptions(screen.getByLabelText(/saved provider key/i), "key-123");
     await user.click(screen.getByRole("button", { name: /generate resume/i }));
@@ -636,9 +614,9 @@ describe("GitResume SPA", () => {
     render(<App />);
 
     await user.type(screen.getByLabelText(/repository url/i), "https://github.com/acme/rocket");
-    await user.selectOptions(await screen.findByLabelText(/generation model/i), "gemini/gemini-1.5-flash");
+    await user.selectOptions(await screen.findByRole("combobox", { name: /^model provider$/i }), "gemini");
     await user.selectOptions(screen.getByLabelText(/saved provider key/i), "key-gemini");
-    await user.selectOptions(screen.getByLabelText(/generation model/i), "openai/gpt-4o-mini");
+    await user.selectOptions(screen.getByRole("combobox", { name: /^model provider$/i }), "openai");
     await user.click(screen.getByRole("button", { name: /generate resume/i }));
 
     await waitFor(() => expect(MockEventSource.instances).toHaveLength(1));
@@ -681,7 +659,7 @@ describe("GitResume SPA", () => {
     expect(within(savedProviderKey).queryByRole("option", { name: /Gemini scoped/i })).toBeNull();
     expect(within(savedProviderKey).queryByRole("option", { name: /Gemini provider-wide/i })).toBeNull();
 
-    await user.selectOptions(modelSelect, "gemini/gemini-1.5-flash");
+    await user.selectOptions(screen.getByRole("combobox", { name: /^model provider$/i }), "gemini");
 
     expect(within(savedProviderKey).queryByRole("option", { name: /Work OpenAI/i })).toBeNull();
     expect(within(savedProviderKey).getByRole("option", { name: /Gemini scoped/i })).toBeTruthy();
@@ -747,7 +725,7 @@ describe("GitResume SPA", () => {
     expect(await screen.findByText("Work OpenAI")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: /delete Work OpenAI/i }));
     await user.click(screen.getByRole("button", { name: /disconnect Work Copilot/i }));
-    await user.click(screen.getByRole("button", { name: /^disconnect github_copilot$/i }));
+    await user.click(screen.getByRole("button", { name: /^disconnect GitHub Copilot$/i }));
 
     expect(confirm).toHaveBeenCalledTimes(3);
     expect(fetchMock.mock.calls.some(([url, init]) => url === "/api/settings/provider-keys/key-123" && init?.method === "DELETE")).toBe(false);
@@ -758,7 +736,7 @@ describe("GitResume SPA", () => {
   it("surfaces BYOK and OAuth API errors as readable alerts", async () => {
     mockFetch({
       settingsSaveError: { detail: "Saved BYOK is disabled for hosted users." },
-      oauthConnectError: { detail: [{ msg: "OAuth token is invalid." }] },
+      oauthConnectError: { detail: [{ msg: "OAuth login could not start." }] },
     });
     const user = userEvent.setup();
 
@@ -771,10 +749,9 @@ describe("GitResume SPA", () => {
 
     expect((await screen.findByRole("alert")).textContent).toContain("Saved BYOK is disabled for hosted users.");
 
-    await user.type(screen.getByLabelText(/github_copilot manual token/i), "bad-token");
-    await user.click(screen.getByRole("button", { name: /^connect github_copilot$/i }));
+    await user.click(screen.getByRole("button", { name: /^connect GitHub Copilot$/i }));
 
-    await waitFor(() => expect(screen.getAllByRole("alert").some((alert) => alert.textContent?.includes("OAuth token is invalid."))).toBe(true));
+    await waitFor(() => expect(screen.getAllByRole("alert").some((alert) => alert.textContent?.includes("OAuth login could not start."))).toBe(true));
     expect(document.body.textContent).not.toContain('"detail"');
   });
 

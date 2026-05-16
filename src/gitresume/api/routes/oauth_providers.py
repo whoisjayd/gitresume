@@ -7,6 +7,7 @@ from redis.asyncio import Redis
 
 from gitresume.core.config import Settings
 from gitresume.core.crypto import StringEncryptor
+from gitresume.services.oauth_login_service import OAuthLoginJob, OAuthLoginService
 from gitresume.services.oauth_provider_store import (
     SUPPORTED_OAUTH_PROVIDERS,
     OAuthProviderCredentialInput,
@@ -65,6 +66,11 @@ class OAuthProviderAccountUpdateRequest(BaseModel):
         return value
 
 
+class OAuthLoginStartResponse(BaseModel):
+    job_id: str = Field(serialization_alias="jobId")
+    status_url: str = Field(serialization_alias="statusUrl")
+
+
 class OAuthProviderContext(BaseModel):
     settings: Settings = Field(exclude=True)
     scope: str
@@ -89,6 +95,42 @@ async def list_oauth_providers(request: Request) -> OAuthProvidersResponse:
     return OAuthProvidersResponse(
         providers=await store.list_statuses(context.scope, SUPPORTED_OAUTH_PROVIDERS)
     )
+
+
+@router.post(
+    "/{provider}/login",
+    response_model=OAuthLoginStartResponse,
+    response_model_by_alias=True,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def start_oauth_provider_login(provider: str, request: Request) -> OAuthLoginStartResponse:
+    if provider not in SUPPORTED_OAUTH_PROVIDERS:
+        raise HTTPException(status_code=404, detail="Unsupported OAuth provider.")
+    context = oauth_provider_context(request)
+    ensure_oauth_enabled(context)
+    store = require_oauth_provider_store(request, context.settings)
+    service = require_oauth_login_service(request, context.settings, store, context.scope)
+    try:
+        job = await service.start(provider)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    return OAuthLoginStartResponse(job_id=job.job_id, status_url=job.status_url)
+
+
+@router.get(
+    "/login-jobs/{job_id}",
+    response_model=OAuthLoginJob,
+    response_model_by_alias=True,
+)
+async def get_oauth_provider_login_job(job_id: str, request: Request) -> OAuthLoginJob:
+    context = oauth_provider_context(request)
+    ensure_oauth_enabled(context)
+    store = require_oauth_provider_store(request, context.settings)
+    service = require_oauth_login_service(request, context.settings, store, context.scope)
+    job = await service.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="OAuth login job not found.")
+    return job
 
 
 @router.post(
@@ -228,6 +270,20 @@ def require_oauth_provider_store(request: Request, settings: Settings) -> RedisO
     if store is None:
         raise HTTPException(status_code=503, detail=DISABLED_BY_REDIS)
     return store
+
+
+def require_oauth_login_service(
+    request: Request,
+    settings: Settings,
+    store: RedisOAuthProviderStore,
+    scope: str,
+) -> OAuthLoginService:
+    redis = getattr(request.app.state, "redis", None)
+    if redis is None:
+        if not settings.redis_url:
+            raise HTTPException(status_code=503, detail=DISABLED_BY_REDIS)
+        redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    return OAuthLoginService(redis, settings, store, scope)
 
 
 def ensure_oauth_enabled(context: OAuthProviderContext) -> None:

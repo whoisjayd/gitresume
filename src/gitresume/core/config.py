@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Annotated, Literal
 
 from pydantic import AnyHttpUrl, Field, SecretStr, field_validator, model_validator
@@ -43,6 +44,9 @@ class Settings(BaseSettings):
     ai_model: str = "gemini/gemini-1.5-flash"
     ai_temperature: float = 0.2
     ai_timeout_seconds: int = 90
+    litellm_oauth_token_root: Path = Field(
+        default_factory=lambda: Path.home() / ".config" / "litellm"
+    )
 
     max_repo_size_mb: int = 100
     max_repo_files: int = 200
@@ -64,6 +68,13 @@ class Settings(BaseSettings):
     def parse_allowed_hosts(cls, value: str | list[str]) -> list[str]:
         if isinstance(value, str):
             return [host.strip() for host in value.split(",") if host.strip()]
+        return value
+
+    @field_validator("session_cookie_https_only", mode="before")
+    @classmethod
+    def parse_optional_bool(cls, value: str | bool | None) -> str | bool | None:
+        if value == "":
+            return None
         return value
 
     @field_validator("log_level")
