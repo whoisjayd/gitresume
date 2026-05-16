@@ -549,6 +549,28 @@ describe("GitResume SPA", () => {
     expect(MockEventSource.instances[0].url).not.toContain("sk-provider-secret");
   });
 
+  it("keeps unavailable OAuth providers visible and blocks submit until connected", async () => {
+    const fetchMock = mockFetch();
+    vi.stubGlobal("EventSource", MockEventSource);
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    const providerSelect = await screen.findByRole("combobox", { name: /^model provider$/i });
+    expect(within(providerSelect).getByRole("option", { name: /GitHub Copilot/i })).toBeTruthy();
+
+    await user.selectOptions(providerSelect, "github_copilot");
+
+    const modelSelect = screen.getByRole("combobox", { name: /^generation model$/i });
+    expect(within(modelSelect).getByRole("option", { name: /GPT 4.1/i })).toBeTruthy();
+    expect(screen.getByText(/OAuth connection is not implemented yet/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /generate resume/i })).toHaveProperty("disabled", true);
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/generations",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
   it("shows author contribution scope controls when enabled and submits scoped analysis fields", async () => {
     const fetchMock = mockFetch({
       settings: {

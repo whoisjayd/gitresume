@@ -34,6 +34,7 @@ def test_backend_dockerfile_uses_uv_src_entrypoint_and_worker_runtime_tools() ->
     assert "COPY --from=node-runtime /usr/local/ /usr/local/" in dockerfile
     assert "npm" in dockerfile
     assert "NPM_CONFIG_CACHE=/home/appuser/.npm" in dockerfile
+    assert "/home/appuser/.config/litellm" in dockerfile
     for token in ("uvicorn", "gitresume.main:app", "--host", "0.0.0.0", "--port", "8080"):
         assert token in dockerfile
     assert "app:app" not in dockerfile

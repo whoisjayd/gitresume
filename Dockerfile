@@ -25,7 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN addgroup --system appgroup \
     && adduser --system --home /home/appuser --ingroup appgroup appuser \
-    && mkdir -p /home/appuser/.npm \
+    && mkdir -p /home/appuser/.npm /home/appuser/.config/litellm \
     && chown -R appuser:appgroup /home/appuser
 
 COPY --from=builder --chown=appuser:appgroup /app/.venv /app/.venv

@@ -38,11 +38,13 @@ export function GenerationForm({
   const [useAuthorScope, setUseAuthorScope] = useState(false);
   const [analysisAuthor, setAnalysisAuthor] = useState("");
   const [analysisDays, setAnalysisDays] = useState(String(contributionAnalysisDefaultDays));
-  const availableModels = models.filter((model) => model.isAvailable);
-  const availableProviders = Array.from(
-    new Set(availableModels.map((model) => model.provider)),
+  const visibleModels = models.filter((model) => model.authType === "oauth" || model.isAvailable);
+  const visibleProviders = Array.from(
+    new Set(visibleModels.map((model) => model.provider)),
   ).sort((first, second) => first.localeCompare(second));
-  const providerModels = availableModels.filter((model) => model.provider === selectedProvider);
+  const providerModels = visibleModels.filter((model) => model.provider === selectedProvider);
+  const selectedModelEntry = models.find((model) => model.id === selectedModel) ?? null;
+  const selectedModelUnavailable = Boolean(selectedModelEntry && !selectedModelEntry.isAvailable);
   const selectedModelProvider = models.find((model) => model.id === selectedModel)?.provider ?? null;
   const compatibleKeys = providerKeys.filter((key) => {
     if (selectedModelProvider && key.provider !== selectedModelProvider) {
@@ -71,7 +73,7 @@ export function GenerationForm({
           repoUrl: repoUrl.trim(),
           jobDescription: showJobDescription && jobDescription.trim() ? jobDescription.trim() : null,
           githubToken: githubToken.trim() ? githubToken.trim() : null,
-          model: selectedModel || providerModels[0]?.id || availableModels[0]?.id || null,
+          model: selectedModel || providerModels[0]?.id || visibleModels[0]?.id || null,
           providerKeyId: providerKeyId || null,
           providerApiKey: providerApiKey.trim() ? providerApiKey.trim() : null,
           ...(canUseAuthorScope && useAuthorScope && analysisAuthor.trim()
@@ -108,7 +110,7 @@ export function GenerationForm({
             onChange={(event) => onSelectedProviderChange(event.target.value)}
             aria-label="Model provider"
           >
-            {availableProviders.map((provider) => (
+            {visibleProviders.map((provider) => (
               <option key={provider} value={provider}>{providerLabel(provider)}</option>
             ))}
           </select>
@@ -121,9 +123,14 @@ export function GenerationForm({
             aria-label="Generation model"
           >
             {providerModels.map((model) => (
-              <option key={model.id} value={model.id}>{model.displayName}</option>
+              <option key={model.id} value={model.id}>
+                {model.displayName}{model.isAvailable ? "" : " (connect first)"}
+              </option>
             ))}
           </select>
+          {selectedModelUnavailable ? (
+            <small>{selectedModelEntry?.status ?? "Connect or refresh this OAuth provider before generating."}</small>
+          ) : null}
         </label>
       </div>
 
@@ -221,7 +228,7 @@ export function GenerationForm({
         </fieldset>
       ) : null}
 
-      <button className="primary-action" type="submit" disabled={isSubmitting}>
+      <button className="primary-action" type="submit" disabled={isSubmitting || selectedModelUnavailable}>
         <Play size={18} aria-hidden="true" /> {isSubmitting ? "Generating..." : "Generate resume"}
       </button>
     </form>

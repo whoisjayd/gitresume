@@ -66,7 +66,7 @@ export default function App() {
         setModels(modelEntries);
         setOauthProviders(providerStatuses);
         setDashboardSettings(settings);
-        const fallback = modelEntries.find((model) => model.isAvailable)?.id ?? "";
+        const fallback = firstUsableModel(modelEntries)?.id ?? "";
         const initialModel = settings.defaultModel || fallback;
         setSelectedModel(initialModel);
         setSelectedProvider(modelEntries.find((model) => model.id === initialModel)?.provider ?? "openai");
@@ -98,8 +98,8 @@ export default function App() {
     const [modelEntries, providerStatuses] = await Promise.all([listModels(), listOAuthProviders()]);
     setModels(modelEntries);
     setOauthProviders(providerStatuses);
-    const fallback = modelEntries.find((model) => model.isAvailable)?.id ?? "";
-    if (!modelEntries.some((model) => model.id === selectedModel && model.isAvailable)) {
+    const fallback = firstUsableModel(modelEntries)?.id ?? "";
+    if (!modelEntries.some((model) => model.id === selectedModel)) {
       setSelectedModel(fallback);
       setSelectedProvider(modelEntries.find((model) => model.id === fallback)?.provider ?? "openai");
     }
@@ -107,7 +107,7 @@ export default function App() {
 
   function updateSelectedProvider(provider: string) {
     setSelectedProvider(provider);
-    const firstProviderModel = models.find((model) => model.provider === provider && model.isAvailable);
+    const firstProviderModel = firstUsableModel(models.filter((model) => model.provider === provider));
     if (firstProviderModel) {
       setSelectedModel(firstProviderModel.id);
     }
@@ -383,6 +383,15 @@ async function pollOAuthLoginJob(
 
 function oauthProviderLabel(provider: string): string {
   return provider === "chatgpt" ? "ChatGPT" : "GitHub Copilot";
+}
+
+function firstUsableModel(models: ModelEntry[]): ModelEntry | null {
+  return (
+    models.find((model) => model.isAvailable) ??
+    models.find((model) => model.authType === "oauth") ??
+    models[0] ??
+    null
+  );
 }
 
 function providerStatusAccountLabel(providers: OAuthProviderStatus[], providerName: string, accountId: string): string | null {
