@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from gitresume.core.config import Settings
 from gitresume.services.oauth_provider_store import (
@@ -31,15 +31,17 @@ SAFE_LOGIN_MODELS = {
 
 
 class OAuthLoginJob(BaseModel):
-    job_id: str = Field(serialization_alias="jobId")
+    model_config = ConfigDict(populate_by_name=True)
+
+    job_id: str = Field(alias="jobId")
     provider: str
     status: str
-    status_url: str = Field(serialization_alias="statusUrl")
+    status_url: str = Field(alias="statusUrl")
     message: str
-    verification_uri: str | None = Field(default=None, serialization_alias="verificationUri")
-    user_code: str | None = Field(default=None, serialization_alias="userCode")
-    created_at: datetime = Field(serialization_alias="createdAt")
-    updated_at: datetime = Field(serialization_alias="updatedAt")
+    verification_uri: str | None = Field(default=None, alias="verificationUri")
+    user_code: str | None = Field(default=None, alias="userCode")
+    created_at: datetime = Field(alias="createdAt")
+    updated_at: datetime = Field(alias="updatedAt")
 
 
 class OAuthLoginService:

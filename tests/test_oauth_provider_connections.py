@@ -13,6 +13,8 @@ from gitresume.core.config import Settings
 from gitresume.core.crypto import StringEncryptor
 from gitresume.main import create_app
 from gitresume.services.oauth_login_service import (
+    OAuthLoginJob,
+    OAuthLoginService,
     load_litellm_oauth_credential,
     parse_device_auth_output,
     sanitize_oauth_output,
@@ -57,6 +59,37 @@ def test_device_auth_stdout_parser_extracts_link_and_code_without_tokens() -> No
         "user_code": "ABCD-1234",
     }
     assert "secret" not in sanitize_oauth_output(output)
+
+
+@pytest.mark.asyncio
+async def test_oauth_login_job_round_trips_with_api_aliases() -> None:
+    redis = FakeRedis(decode_responses=True)
+    settings = Settings(
+        environment="test",
+        session_secret_key="test-secret",
+        allowed_hosts=["testserver"],
+        frontend_origin="http://testserver",
+        redis_url=None,
+        settings_encryption_key=None,
+    )
+    service = OAuthLoginService(redis, settings, store=object(), scope="global")
+    now = datetime.now(UTC)
+    job = OAuthLoginJob(
+        job_id="oauth-login-test",
+        provider="github_copilot",
+        status="queued",
+        status_url="/api/oauth-providers/login-jobs/oauth-login-test",
+        message="queued",
+        created_at=now,
+        updated_at=now,
+    )
+
+    await service.save_job(job)
+
+    loaded = await service.get(job.job_id)
+    assert loaded is not None
+    assert loaded.job_id == job.job_id
+    assert loaded.status_url == job.status_url
 
 
 def test_litellm_chatgpt_token_file_imports_known_fields(tmp_path) -> None:
