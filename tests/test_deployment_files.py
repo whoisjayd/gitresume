@@ -52,6 +52,8 @@ def test_compose_wires_api_worker_frontend_and_redis() -> None:
         in compose
     )
     assert "redis-data:" in compose
+    assert "litellm-oauth-tokens:" in compose
+    assert "/home/appuser/.config/litellm" in compose
     assert "curl -fsS http://localhost:8080/api/health" in compose
     assert "healthcheck:\n      disable: true" in compose
     assert "wget -qO- http://127.0.0.1/health" in compose

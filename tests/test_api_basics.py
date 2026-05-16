@@ -1,3 +1,5 @@
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -71,6 +73,25 @@ def test_settings_treats_blank_optional_session_cookie_https_env_as_unset(
     settings = Settings()
 
     assert settings.session_cookie_https_only is None
+
+
+def test_settings_exports_litellm_oauth_token_dirs_to_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.delenv("CHATGPT_TOKEN_DIR", raising=False)
+    monkeypatch.delenv("GITHUB_COPILOT_TOKEN_DIR", raising=False)
+
+    settings = Settings(
+        environment="test",
+        session_secret_key="test-secret",
+        litellm_oauth_token_root=tmp_path / "litellm",
+    )
+
+    assert settings.chatgpt_token_dir == tmp_path / "litellm" / "chatgpt"
+    assert settings.github_copilot_token_dir == tmp_path / "litellm" / "github_copilot"
+    assert os.environ["CHATGPT_TOKEN_DIR"] == str(settings.chatgpt_token_dir)
+    assert os.environ["GITHUB_COPILOT_TOKEN_DIR"] == str(settings.github_copilot_token_dir)
 
 
 @pytest.mark.parametrize(

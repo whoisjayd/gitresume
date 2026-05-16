@@ -316,6 +316,9 @@ function OAuthProviderPanel({ providers, onRefresh }: {
                   <button type="button" onClick={() => void disconnect(provider.provider)} disabled={busyProvider === provider.provider}>
                     Disconnect {oauthProviderLabel(provider.provider)}
                   </button>
+                  <button type="button" onClick={() => void startLogin(provider.provider)} disabled={busyProvider === provider.provider}>
+                    {busyProvider === provider.provider ? "Waiting for device login..." : `Add another ${oauthProviderLabel(provider.provider)} account`}
+                  </button>
                 </div>
                 {(provider.accounts ?? []).map((account) => {
                   const label = account.accountLabel || account.id;

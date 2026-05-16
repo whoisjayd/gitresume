@@ -428,6 +428,7 @@ textarea { resize: vertical; }
   display: flex;
   justify-content: flex-end;
   align-items: center;
+  gap: 0.65rem;
   min-width: fit-content;
 }
 

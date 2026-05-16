@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
@@ -46,6 +47,11 @@ class Settings(BaseSettings):
     ai_timeout_seconds: int = 90
     litellm_oauth_token_root: Path = Field(
         default_factory=lambda: Path.home() / ".config" / "litellm"
+    )
+    chatgpt_token_dir: Path | None = Field(default=None, alias="CHATGPT_TOKEN_DIR")
+    github_copilot_token_dir: Path | None = Field(
+        default=None,
+        alias="GITHUB_COPILOT_TOKEN_DIR",
     )
 
     max_repo_size_mb: int = 100
@@ -98,6 +104,17 @@ class Settings(BaseSettings):
             if encryptor.decrypt(encrypted) != "settings-check":
                 raise ValueError("settings_encryption_key is not usable for encryption")
         return self
+
+    def model_post_init(self, __context: object) -> None:
+        """Expose LiteLLM OAuth token paths to provider integrations."""
+        chatgpt_dir = self.chatgpt_token_dir or self.litellm_oauth_token_root / "chatgpt"
+        github_copilot_dir = (
+            self.github_copilot_token_dir or self.litellm_oauth_token_root / "github_copilot"
+        )
+        object.__setattr__(self, "chatgpt_token_dir", chatgpt_dir)
+        object.__setattr__(self, "github_copilot_token_dir", github_copilot_dir)
+        os.environ["CHATGPT_TOKEN_DIR"] = str(chatgpt_dir)
+        os.environ["GITHUB_COPILOT_TOKEN_DIR"] = str(github_copilot_dir)
 
 
 @lru_cache

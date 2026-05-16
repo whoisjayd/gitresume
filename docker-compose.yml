@@ -14,6 +14,8 @@ services:
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1,api}
     ports:
       - "8080:8080"
+    volumes:
+      - litellm-oauth-tokens:/home/appuser/.config/litellm
     depends_on:
       redis:
         condition: service_healthy
@@ -36,6 +38,8 @@ services:
     environment:
       - ENVIRONMENT=production
       - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - litellm-oauth-tokens:/home/appuser/.config/litellm
     command: taskiq worker gitresume.workers.broker:broker gitresume.workers.generation_tasks
     depends_on:
       redis:
@@ -76,4 +80,5 @@ services:
     restart: unless-stopped
 
 volumes:
+  litellm-oauth-tokens:
   redis-data:
