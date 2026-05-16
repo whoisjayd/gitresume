@@ -4,6 +4,8 @@ from typing import Any, Literal
 import litellm
 from pydantic import BaseModel, Field
 
+from gitresume.services.oauth_provider_store import OAuthProviderStatus
+
 ModelMode = Literal["chat", "completion", "responses"]
 AuthType = Literal["api_key", "oauth", "none"]
 
@@ -58,6 +60,24 @@ OAUTH_TEXT_MODELS: tuple[dict[str, str], ...] = (
     {"id": "chatgpt/gpt-5-codex", "provider": "chatgpt", "mode": "responses"},
 )
 
+OPENROUTER_FREE_MODELS: tuple[dict[str, str], ...] = (
+    {
+        "id": "openrouter/meta-llama/llama-3.1-8b-instruct:free",
+        "provider": "openrouter",
+        "mode": "chat",
+    },
+    {
+        "id": "openrouter/mistralai/mistral-7b-instruct:free",
+        "provider": "openrouter",
+        "mode": "chat",
+    },
+    {
+        "id": "openrouter/google/gemma-2-9b-it:free",
+        "provider": "openrouter",
+        "mode": "chat",
+    },
+)
+
 
 class ModelCatalogEntry(BaseModel):
     id: str
@@ -77,19 +97,27 @@ class ModelCatalogResponse(BaseModel):
 
 
 class LiteLLMModelCatalog:
+    def __init__(
+        self,
+        oauth_provider_statuses: dict[str, OAuthProviderStatus] | None = None,
+    ) -> None:
+        self.oauth_provider_statuses = oauth_provider_statuses
+
     def list_models(self) -> list[ModelCatalogEntry]:
-        return list(_cached_model_catalog_entries(_model_cost_cache_key()))
+        if self.oauth_provider_statuses is None:
+            return list(_cached_model_catalog_entries(_model_cost_cache_key()))
+        return list(_build_model_catalog_entries(self.oauth_provider_statuses))
 
 
-def find_model_entry(model_id: str) -> ModelCatalogEntry | None:
-    return next(
-        (
-            entry
-            for entry in _cached_model_catalog_entries(_model_cost_cache_key())
-            if entry.id == model_id
-        ),
-        None,
+def find_model_entry(
+    model_id: str, oauth_provider_statuses: dict[str, OAuthProviderStatus] | None = None
+) -> ModelCatalogEntry | None:
+    entries = (
+        _cached_model_catalog_entries(_model_cost_cache_key())
+        if oauth_provider_statuses is None
+        else _build_model_catalog_entries(oauth_provider_statuses)
     )
+    return next((entry for entry in entries if entry.id == model_id), None)
 
 
 def model_mode_for(model_id: str) -> ModelMode:
@@ -116,7 +144,9 @@ def _model_cost_cache_key() -> int:
     return id(getattr(litellm, "model_cost", None))
 
 
-def _build_model_catalog_entries() -> tuple[ModelCatalogEntry, ...]:
+def _build_model_catalog_entries(
+    oauth_provider_statuses: dict[str, OAuthProviderStatus] | None = None,
+) -> tuple[ModelCatalogEntry, ...]:
     entries: dict[str, ModelCatalogEntry] = {}
     for model_id, metadata in _iter_litellm_metadata():
         entry = _entry_from_metadata(model_id, metadata)
@@ -124,8 +154,12 @@ def _build_model_catalog_entries() -> tuple[ModelCatalogEntry, ...]:
             entries[entry.id] = entry
 
     for oauth_model in OAUTH_TEXT_MODELS:
-        entry = _entry_from_oauth_model(oauth_model)
+        entry = _entry_from_oauth_model(oauth_model, oauth_provider_statuses)
         entries[entry.id] = entry
+
+    for openrouter_model in OPENROUTER_FREE_MODELS:
+        entry = _entry_from_openrouter_free_model(openrouter_model)
+        entries.setdefault(entry.id, entry)
 
     return tuple(sorted(entries.values(), key=lambda entry: (entry.provider, entry.id)))
 
@@ -161,24 +195,54 @@ def _entry_from_metadata(model_id: str, metadata: dict[str, Any]) -> ModelCatalo
     )
 
 
-def _entry_from_oauth_model(oauth_model: dict[str, str]) -> ModelCatalogEntry:
+def _entry_from_oauth_model(
+    oauth_model: dict[str, str],
+    oauth_provider_statuses: dict[str, OAuthProviderStatus] | None = None,
+) -> ModelCatalogEntry:
     mode = _normalize_mode(oauth_model["mode"], model_id=oauth_model["id"]) or "chat"
-    status = "OAuth connection is not implemented yet."
-    if mode == "responses":
-        status = (
-            "Responses API execution is not implemented yet; "
-            "OAuth connection is not implemented yet."
-        )
+    provider = oauth_model["provider"]
+    provider_status = (oauth_provider_statuses or {}).get(provider)
+    is_available = bool(
+        provider_status and provider_status.connected and provider_status.executable
+    )
+    status = None if is_available else _oauth_unavailable_status(provider, provider_status)
     return ModelCatalogEntry(
         id=oauth_model["id"],
-        provider=oauth_model["provider"],
+        provider=provider,
         mode=mode,
         display_name=_display_name(oauth_model["id"]),
         auth_type="oauth",
         supports_oauth=True,
         requires_api_key=False,
-        is_available=False,
+        is_available=is_available,
         status=status,
+    )
+
+
+def _entry_from_openrouter_free_model(openrouter_model: dict[str, str]) -> ModelCatalogEntry:
+    mode = _normalize_mode(openrouter_model["mode"], model_id=openrouter_model["id"]) or "chat"
+    return ModelCatalogEntry(
+        id=openrouter_model["id"],
+        provider=openrouter_model["provider"],
+        mode=mode,
+        display_name=_display_name(openrouter_model["id"]),
+        auth_type="api_key",
+        supports_oauth=False,
+        requires_api_key=True,
+        is_available=True,
+        status=(
+            "OpenRouter :free model. Requires an OpenRouter API key; provider "
+            "availability and rate limits are controlled by OpenRouter."
+        ),
+    )
+
+
+def _oauth_unavailable_status(provider: str, provider_status: OAuthProviderStatus | None) -> str:
+    if provider_status is not None and provider_status.status:
+        return provider_status.status
+    return (
+        f"Connect {provider} with a manually configured server-stored OAuth token. "
+        "Browser device-code flow is not exposed by the current in-process LiteLLM integration."
     )
 
 

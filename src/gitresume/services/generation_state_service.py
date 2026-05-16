@@ -38,6 +38,7 @@ class RedisGenerationStateService:
             model=request.model,
             provider_key_id=request.provider_key_id,
             provider_key_scope=request.provider_key_scope,
+            oauth_provider_scope=request.oauth_provider_scope,
             created_at=now,
             updated_at=now,
         )
@@ -262,6 +263,7 @@ class RedisGenerationStateService:
             "model": state.model or "",
             "provider_key_id": state.provider_key_id or "",
             "provider_key_scope": state.provider_key_scope or "",
+            "oauth_provider_scope": state.oauth_provider_scope or "",
             "created_at": state.created_at.isoformat(),
             "updated_at": state.updated_at.isoformat(),
         }
@@ -280,6 +282,7 @@ class RedisGenerationStateService:
             model=raw.get("model") or None,
             provider_key_id=raw.get("provider_key_id") or None,
             provider_key_scope=raw.get("provider_key_scope") or None,
+            oauth_provider_scope=raw.get("oauth_provider_scope") or None,
             created_at=datetime.fromisoformat(raw["created_at"]),
             updated_at=datetime.fromisoformat(raw["updated_at"]),
         )

@@ -34,6 +34,7 @@ class FakeGenerationStateService:
             model=request.model,
             provider_key_id=request.provider_key_id,
             provider_key_scope=request.provider_key_scope,
+            oauth_provider_scope=request.oauth_provider_scope,
         )
         self.states[generation_id] = state
         self.events[generation_id] = [
@@ -129,6 +130,7 @@ def make_client(
         session_secret_key="test-secret",
         allowed_hosts=["testserver"],
         frontend_origin="http://testserver",
+        settings_encryption_key="settings encryption passphrase with enough entropy",
     )
     app = create_app(settings)
     app.dependency_overrides[get_generation_state_service] = lambda: state_service
@@ -318,6 +320,76 @@ def test_post_generation_rejects_unavailable_oauth_model_before_state_creation()
 
     assert response.status_code == 422
     assert "not available" in response.json()["detail"]
+    assert state_service.states == {}
+    assert dispatcher.calls == []
+
+
+def test_post_generation_accepts_connected_oauth_model_and_stores_oauth_scope(monkeypatch) -> None:
+    from gitresume.api.routes import generations
+    from gitresume.services.oauth_provider_store import OAuthProviderStatus
+
+    state_service = FakeGenerationStateService()
+    dispatcher = FakeTaskDispatcher()
+    client = make_client(state_service, dispatcher)
+
+    async def fake_statuses(request):
+        del request
+        return {"github_copilot": OAuthProviderStatus(provider="github_copilot", connected=True)}
+
+    monkeypatch.setattr(generations, "_oauth_provider_statuses", fake_statuses)
+
+    response = client.post(
+        "/api/generations",
+        json={
+            "repoUrl": "https://github.com/example/project",
+            "model": "github_copilot/gpt-4.1",
+        },
+    )
+
+    assert response.status_code == 202
+    generation_id = response.json()["generationId"]
+    assert dispatcher.calls == [generation_id]
+    assert state_service.states[generation_id].model == "github_copilot/gpt-4.1"
+    assert state_service.states[generation_id].oauth_provider_scope == "global"
+    assert "oauth" not in response.text.lower()
+
+
+def test_post_generation_rejects_disconnected_oauth_model_even_when_unknown_to_static_catalog() -> (
+    None
+):
+    state_service = FakeGenerationStateService()
+    dispatcher = FakeTaskDispatcher()
+    client = make_client(state_service, dispatcher)
+
+    response = client.post(
+        "/api/generations",
+        json={
+            "repoUrl": "https://github.com/example/project",
+            "model": "chatgpt/codex-mini-latest",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "Connect chatgpt" in response.json()["detail"]
+    assert state_service.states == {}
+    assert dispatcher.calls == []
+
+
+def test_post_generation_rejects_unknown_oauth_provider_model_before_state_creation() -> None:
+    state_service = FakeGenerationStateService()
+    dispatcher = FakeTaskDispatcher()
+    client = make_client(state_service, dispatcher)
+
+    response = client.post(
+        "/api/generations",
+        json={
+            "repoUrl": "https://github.com/example/project",
+            "model": "github_copilot/new-model",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "Unknown model" in response.json()["detail"]
     assert state_service.states == {}
     assert dispatcher.calls == []
 

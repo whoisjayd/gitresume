@@ -292,6 +292,169 @@ async def test_run_generation_uses_selected_model_without_secret_in_state_or_pay
 
 
 @pytest.mark.asyncio
+async def test_run_generation_uses_oauth_account_selector_for_oauth_model_without_token_leak(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generation_tasks = patch_worker_dependencies(monkeypatch)
+
+    class OAuthStateService(FakeStateService):
+        async def get_generation(self, generation_id: str) -> GenerationState | None:
+            state = await super().get_generation(generation_id)
+            assert state is not None
+            return state.model_copy(
+                update={
+                    "model": "github_copilot/gpt-4.1",
+                    "oauth_provider_scope": "global",
+                }
+            )
+
+    class FakeOAuthProviderStore:
+        calls: list[dict[str, str]] = []
+
+        def __init__(self, redis: object, encryptor: object) -> None:
+            self.redis = redis
+            self.encryptor = encryptor
+
+        async def select_access_token(self, scope: str, provider: str) -> str | None:
+            self.calls.append({"scope": scope, "provider": provider})
+            return "ghu-selected-account-token"
+
+    monkeypatch.setattr(generation_tasks, "RedisGenerationStateService", OAuthStateService)
+    monkeypatch.setattr(generation_tasks, "RedisOAuthProviderStore", FakeOAuthProviderStore)
+    monkeypatch.setattr(generation_tasks, "StringEncryptor", FakeStringEncryptor)
+    monkeypatch.setattr(generation_tasks, "provider_for_model", lambda model: "github_copilot")
+    monkeypatch.setattr(
+        generation_tasks,
+        "get_settings",
+        lambda: SimpleNamespace(
+            redis_url="redis://unit-test",
+            ai_model="gemini/gemini-1.5-flash",
+            settings_encryption_key=FakeSecret("settings encryption passphrase"),
+            allow_saved_byok=False,
+        ),
+    )
+
+    await generation_tasks.run_generation.original_func("gen-oauth-selector")
+
+    assert FakeOAuthProviderStore.calls == [{"scope": "global", "provider": "github_copilot"}]
+    assert FakeResumeGenerationService.calls[-1]["provider_api_key"] == "ghu-selected-account-token"
+    assert "ghu-selected-account-token" not in str(OAuthStateService.instances[-1].events)
+
+
+@pytest.mark.asyncio
+async def test_run_generation_uses_connected_oauth_provider_token_for_oauth_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generation_tasks = patch_worker_dependencies(monkeypatch)
+
+    class OAuthStateService(FakeStateService):
+        async def get_generation(self, generation_id: str) -> GenerationState | None:
+            state = await super().get_generation(generation_id)
+            assert state is not None
+            return state.model_copy(
+                update={
+                    "model": "github_copilot/gpt-4.1",
+                    "oauth_provider_scope": "global",
+                }
+            )
+
+    class FakeOAuthProviderStore:
+        calls: list[dict[str, str]] = []
+
+        def __init__(self, redis: object, encryptor: object) -> None:
+            self.redis = redis
+            self.encryptor = encryptor
+
+        async def select_access_token(self, scope: str, provider: str) -> str | None:
+            self.calls.append({"scope": scope, "provider": provider})
+            return "ghu-oauth-token"
+
+    monkeypatch.setattr(generation_tasks, "RedisGenerationStateService", OAuthStateService)
+    monkeypatch.setattr(generation_tasks, "RedisOAuthProviderStore", FakeOAuthProviderStore)
+    monkeypatch.setattr(generation_tasks, "StringEncryptor", FakeStringEncryptor)
+    monkeypatch.setattr(generation_tasks, "provider_for_model", lambda model: "github_copilot")
+    monkeypatch.setattr(
+        generation_tasks,
+        "get_settings",
+        lambda: SimpleNamespace(
+            redis_url="redis://unit-test",
+            ai_model="gemini/gemini-1.5-flash",
+            settings_encryption_key=FakeSecret("settings encryption passphrase"),
+            allow_saved_byok=False,
+        ),
+    )
+
+    await generation_tasks.run_generation.original_func("gen-oauth")
+
+    assert FakeOAuthProviderStore.calls == [{"scope": "global", "provider": "github_copilot"}]
+    assert FakeResumeGenerationService.calls[-1]["model"] == "github_copilot/gpt-4.1"
+    assert FakeResumeGenerationService.calls[-1]["provider_api_key"] == "ghu-oauth-token"
+    assert FakeResumeGenerationService.calls[-1]["model_mode"] == "chat"
+    assert "ghu-oauth-token" not in str(OAuthStateService.instances[-1].events)
+
+
+@pytest.mark.asyncio
+async def test_run_generation_oauth_litellm_failure_keeps_token_out_of_state_and_logs(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    generation_tasks = patch_worker_dependencies(monkeypatch)
+
+    class OAuthStateService(FakeStateService):
+        async def get_generation(self, generation_id: str) -> GenerationState | None:
+            state = await super().get_generation(generation_id)
+            assert state is not None
+            return state.model_copy(
+                update={
+                    "model": "github_copilot/gpt-4.1",
+                    "oauth_provider_scope": "global",
+                }
+            )
+
+    class FakeOAuthProviderStore:
+        def __init__(self, redis: object, encryptor: object) -> None:
+            del redis, encryptor
+
+        async def select_access_token(self, scope: str, provider: str) -> str | None:
+            assert scope == "global"
+            assert provider == "github_copilot"
+            return "ghu-oauth-sensitive-token"
+
+    class LeakyOAuthResumeGenerationService(FakeResumeGenerationService):
+        async def generate(self, **kwargs: object) -> ResumeDraft:
+            assert kwargs["provider_api_key"] == "ghu-oauth-sensitive-token"
+            raise RuntimeError("LiteLLM failed with token ghu-oauth-sensitive-token")
+
+    monkeypatch.setattr(generation_tasks, "RedisGenerationStateService", OAuthStateService)
+    monkeypatch.setattr(generation_tasks, "RedisOAuthProviderStore", FakeOAuthProviderStore)
+    monkeypatch.setattr(generation_tasks, "StringEncryptor", FakeStringEncryptor)
+    monkeypatch.setattr(generation_tasks, "provider_for_model", lambda model: "github_copilot")
+    monkeypatch.setattr(
+        generation_tasks,
+        "ResumeGenerationService",
+        LeakyOAuthResumeGenerationService,
+    )
+    monkeypatch.setattr(
+        generation_tasks,
+        "get_settings",
+        lambda: SimpleNamespace(
+            redis_url="redis://unit-test",
+            ai_model="gemini/gemini-1.5-flash",
+            settings_encryption_key=FakeSecret("settings encryption passphrase"),
+            allow_saved_byok=False,
+        ),
+    )
+
+    await generation_tasks.run_generation.original_func("gen-oauth-leak")
+
+    state_service = OAuthStateService.instances[-1]
+    assert state_service.error == "Generation failed during resume generation."
+    assert "ghu-oauth-sensitive-token" not in str(state_service.events)
+    assert "ghu-oauth-sensitive-token" not in caplog.text
+    assert "LiteLLM failed with token" not in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_run_generation_rotates_saved_key_for_selected_model_when_enabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

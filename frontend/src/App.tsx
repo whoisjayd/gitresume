@@ -2,18 +2,24 @@ import { AlertTriangle, RotateCcw, TerminalSquare } from "lucide-react";
 import type { FormEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import {
+  connectOAuthProvider,
   createGeneration,
   deleteProviderKey,
+  disconnectOAuthProvider,
+  disconnectOAuthProviderAccount,
   getDashboardSettings,
   getSession,
   listModels,
+  listOAuthProviders,
   logoutSession,
   saveProviderKey,
   setDefaultModel,
+  updateOAuthProviderAccount,
   type CreateGenerationInput,
   type CreateGenerationResponse,
   type DashboardSettings,
   type ModelEntry,
+  type OAuthProviderStatus,
   type SessionInfo,
 } from "./api/generations";
 import { GenerationForm } from "./components/GenerationForm";
@@ -35,6 +41,7 @@ export default function App() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [models, setModels] = useState<ModelEntry[]>([]);
+  const [oauthProviders, setOauthProviders] = useState<OAuthProviderStatus[]>([]);
   const [dashboardSettings, setDashboardSettings] = useState<DashboardSettings | null>(null);
   const [selectedModel, setSelectedModel] = useState("");
   const [settingsError, setSettingsError] = useState<string | null>(null);
@@ -50,11 +57,12 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    void Promise.all([getSession(), listModels(), getDashboardSettings()])
-      .then(([sessionInfo, modelEntries, settings]) => {
+    void Promise.all([getSession(), listModels(), getDashboardSettings(), listOAuthProviders()])
+      .then(([sessionInfo, modelEntries, settings, providerStatuses]) => {
         if (!active) return;
         setSession(sessionInfo);
         setModels(modelEntries);
+        setOauthProviders(providerStatuses);
         setDashboardSettings(settings);
         const fallback = modelEntries.find((model) => model.isAvailable)?.id ?? "";
         setSelectedModel(settings.defaultModel || fallback);
@@ -79,6 +87,16 @@ export default function App() {
       setSubmitError(reason instanceof Error ? reason.message : "Could not start generation.");
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function refreshModelsAndOauthProviders() {
+    const [modelEntries, providerStatuses] = await Promise.all([listModels(), listOAuthProviders()]);
+    setModels(modelEntries);
+    setOauthProviders(providerStatuses);
+    const fallback = modelEntries.find((model) => model.isAvailable)?.id ?? "";
+    if (!modelEntries.some((model) => model.id === selectedModel && model.isAvailable)) {
+      setSelectedModel(fallback);
     }
   }
 
@@ -162,6 +180,7 @@ export default function App() {
       {result ? <ResultPanel result={result} /> : null}
 
       <ModelBrowser models={models} />
+      <OAuthProviderPanel providers={oauthProviders} onRefresh={refreshModelsAndOauthProviders} />
       <SettingsPanel
         settings={dashboardSettings}
         models={models}
@@ -214,6 +233,172 @@ function ModelBrowser({ models }: { models: ModelEntry[] }) {
               <span className="chip">{model.isAvailable ? "Selectable" : "Unavailable"}</span>
             </div>
             {model.status ? <small>{model.status}</small> : null}
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function OAuthProviderPanel({ providers, onRefresh }: {
+  providers: OAuthProviderStatus[];
+  onRefresh: () => Promise<void>;
+}) {
+  const [tokens, setTokens] = useState<Record<string, string>>({});
+  const [refreshTokens, setRefreshTokens] = useState<Record<string, string>>({});
+  const [expiresAt, setExpiresAt] = useState<Record<string, string>>({});
+  const [labels, setLabels] = useState<Record<string, string>>({});
+  const [replacementTokens, setReplacementTokens] = useState<Record<string, string>>({});
+  const [replacementRefreshTokens, setReplacementRefreshTokens] = useState<Record<string, string>>({});
+  const [replacementExpiresAt, setReplacementExpiresAt] = useState<Record<string, string>>({});
+  const [busyProvider, setBusyProvider] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function connect(provider: string) {
+    setBusyProvider(provider);
+    setError(null);
+    try {
+      await connectOAuthProvider({
+        provider,
+        accessToken: tokens[provider] ?? "",
+        refreshToken: refreshTokens[provider]?.trim() || null,
+        expiresAt: expiresAt[provider] || null,
+        accountLabel: labels[provider]?.trim() || null,
+      });
+      setTokens((current) => ({ ...current, [provider]: "" }));
+      setRefreshTokens((current) => ({ ...current, [provider]: "" }));
+      setExpiresAt((current) => ({ ...current, [provider]: "" }));
+      await onRefresh();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not connect OAuth provider.");
+    } finally {
+      setBusyProvider(null);
+    }
+  }
+
+  async function disconnect(provider: string) {
+    setBusyProvider(provider);
+    setError(null);
+    try {
+      await disconnectOAuthProvider(provider);
+      await onRefresh();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not disconnect OAuth provider.");
+    } finally {
+      setBusyProvider(null);
+    }
+  }
+
+  async function disconnectAccount(provider: string, accountId: string, busyKey: string) {
+    setBusyProvider(busyKey);
+    setError(null);
+    try {
+      await disconnectOAuthProviderAccount(provider, accountId);
+      await onRefresh();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not disconnect OAuth account.");
+    } finally {
+      setBusyProvider(null);
+    }
+  }
+
+  async function refreshAccount(provider: string, accountId: string, busyKey: string) {
+    setBusyProvider(busyKey);
+    setError(null);
+    try {
+      await updateOAuthProviderAccount({
+        provider,
+        accountId,
+        accessToken: replacementTokens[busyKey] ?? "",
+        refreshToken: replacementRefreshTokens[busyKey]?.trim() || null,
+        expiresAt: replacementExpiresAt[busyKey] || null,
+      });
+      setReplacementTokens((current) => ({ ...current, [busyKey]: "" }));
+      setReplacementRefreshTokens((current) => ({ ...current, [busyKey]: "" }));
+      setReplacementExpiresAt((current) => ({ ...current, [busyKey]: "" }));
+      await onRefresh();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not refresh OAuth account.");
+    } finally {
+      setBusyProvider(null);
+    }
+  }
+
+  return (
+    <section className="console-card settings-panel" aria-labelledby="oauth-providers-title">
+      <div className="section-kicker">OAuth execution</div>
+      <h2 id="oauth-providers-title">OAuth model providers</h2>
+      <p className="notice">Manual tokens are encrypted server-side. Browser device-code flow is not exposed by the current LiteLLM integration.</p>
+      {error ? <p className="notice" role="alert">{error}</p> : null}
+      <div className="saved-key-list">
+        {providers.map((provider) => (
+          <article key={provider.provider}>
+            <div>
+              <strong>{provider.provider}</strong>
+              <span>{provider.connected ? "Connected" : "Not connected"}{provider.accountLabel ? ` · ${provider.accountLabel}` : ""}</span>
+              {provider.status ? <small>{provider.status}</small> : null}
+            </div>
+            {provider.connected ? (
+              <div className="settings-form">
+                <button type="button" onClick={() => void disconnect(provider.provider)} disabled={busyProvider === provider.provider}>
+                  Disconnect {provider.provider}
+                </button>
+                {(provider.accounts ?? []).map((account) => {
+                  const label = account.accountLabel || account.id;
+                  const busyKey = `${provider.provider}:${account.id}`;
+                  return (
+                    <div key={account.id} className="saved-key-list">
+                      <article>
+                        <div>
+                          <strong>{label}</strong>
+                          <span>{account.executable ? "Executable" : "Refresh required"}</span>
+                          {account.status ? <small>{account.status}</small> : null}
+                        </div>
+                        <label className="field">
+                          <span>Replacement token for {label}</span>
+                          <input type="password" value={replacementTokens[busyKey] ?? ""} onChange={(event) => setReplacementTokens((current) => ({ ...current, [busyKey]: event.target.value }))} autoComplete="off" disabled={busyProvider === busyKey} />
+                        </label>
+                        <label className="field">
+                          <span>Replacement refresh token for {label}</span>
+                          <input type="password" value={replacementRefreshTokens[busyKey] ?? ""} onChange={(event) => setReplacementRefreshTokens((current) => ({ ...current, [busyKey]: event.target.value }))} autoComplete="off" disabled={busyProvider === busyKey} />
+                        </label>
+                        <label className="field">
+                          <span>Replacement expiry for {label}</span>
+                          <input type="datetime-local" value={replacementExpiresAt[busyKey] ?? ""} onChange={(event) => setReplacementExpiresAt((current) => ({ ...current, [busyKey]: event.target.value }))} disabled={busyProvider === busyKey} />
+                        </label>
+                        <button type="button" onClick={() => void refreshAccount(provider.provider, account.id, busyKey)} disabled={busyProvider === busyKey || !(replacementTokens[busyKey] ?? "").trim()}>
+                          Refresh {label}
+                        </button>
+                        <button type="button" onClick={() => void disconnectAccount(provider.provider, account.id, busyKey)} disabled={busyProvider === busyKey}>
+                          Disconnect {label}
+                        </button>
+                      </article>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+            <div className="settings-form">
+              <label className="field">
+                <span>{provider.provider} account label</span>
+                <input value={labels[provider.provider] ?? ""} onChange={(event) => setLabels((current) => ({ ...current, [provider.provider]: event.target.value }))} disabled={busyProvider === provider.provider} />
+              </label>
+              <label className="field">
+                <span>{provider.provider} manual token</span>
+                <input type="password" value={tokens[provider.provider] ?? ""} onChange={(event) => setTokens((current) => ({ ...current, [provider.provider]: event.target.value }))} autoComplete="off" disabled={busyProvider === provider.provider} />
+              </label>
+              <label className="field">
+                <span>{provider.provider} refresh token</span>
+                <input type="password" value={refreshTokens[provider.provider] ?? ""} onChange={(event) => setRefreshTokens((current) => ({ ...current, [provider.provider]: event.target.value }))} autoComplete="off" disabled={busyProvider === provider.provider} />
+              </label>
+              <label className="field">
+                <span>{provider.provider} token expiry</span>
+                <input type="datetime-local" value={expiresAt[provider.provider] ?? ""} onChange={(event) => setExpiresAt((current) => ({ ...current, [provider.provider]: event.target.value }))} disabled={busyProvider === provider.provider} />
+              </label>
+              <button type="button" onClick={() => void connect(provider.provider)} disabled={busyProvider === provider.provider || !(tokens[provider.provider] ?? "").trim()}>
+                Connect {provider.provider}
+              </button>
+            </div>
           </article>
         ))}
       </div>

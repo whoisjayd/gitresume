@@ -5,9 +5,15 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field, SecretStr
 from redis.asyncio import Redis
 
+from gitresume.api.routes.oauth_providers import oauth_provider_context, oauth_provider_store
 from gitresume.core.config import Settings
 from gitresume.core.crypto import StringEncryptor
 from gitresume.services.model_catalog import find_model_entry, provider_for_model
+from gitresume.services.oauth_provider_store import (
+    SUPPORTED_OAUTH_PROVIDERS,
+    OAuthProviderStatus,
+    disconnected_status,
+)
 from gitresume.services.settings_store import (
     ProviderKeyInput,
     RedisSettingsStore,
@@ -79,7 +85,7 @@ async def set_default_model(
 ) -> DashboardSettingsResponse:
     context = _settings_context(request)
     _ensure_enabled(context)
-    _validate_settings_model(body.model)
+    await _validate_settings_model(body.model, request)
     store = _require_settings_store(request, context.settings)
     dashboard = await store.set_default_model(context.scope, body.model)
     return _response_from_dashboard(context, dashboard.default_model, dashboard.provider_keys)
@@ -97,7 +103,7 @@ async def create_provider_key(
 ) -> StoredProviderKey:
     context = _settings_context(request)
     _ensure_enabled(context)
-    _validate_provider_key_model(body.provider, body.model)
+    await _validate_provider_key_model(body.provider, body.model, request)
     store = _require_settings_store(request, context.settings)
     return await store.save_provider_key(
         context.scope,
@@ -180,10 +186,10 @@ def _require_settings_store(request: Request, settings: Settings) -> RedisSettin
     return store
 
 
-def _validate_settings_model(model: str | None) -> None:
+async def _validate_settings_model(model: str | None, request: Request) -> None:
     if model is None:
         return
-    entry = find_model_entry(model)
+    entry = find_model_entry(model, await _oauth_statuses(request))
     if entry is None:
         raise HTTPException(status_code=422, detail=f"Unknown model: {model}")
     if not entry.is_available:
@@ -193,8 +199,8 @@ def _validate_settings_model(model: str | None) -> None:
         )
 
 
-def _validate_provider_key_model(provider: str, model: str | None) -> None:
-    _validate_settings_model(model)
+async def _validate_provider_key_model(provider: str, model: str | None, request: Request) -> None:
+    await _validate_settings_model(model, request)
     if model is None:
         return
     model_provider = provider_for_model(model)
@@ -203,6 +209,19 @@ def _validate_provider_key_model(provider: str, model: str | None) -> None:
             status_code=422,
             detail=f"Provider {provider} does not match model provider {model_provider}.",
         )
+
+
+async def _oauth_statuses(request: Request) -> dict[str, OAuthProviderStatus]:
+    context = oauth_provider_context(request)
+    store = oauth_provider_store(request, context.settings) if context.enabled else None
+    if store is None:
+        reason = context.disabled_reason if not context.enabled else None
+        return {
+            provider: disconnected_status(provider, reason)
+            for provider in SUPPORTED_OAUTH_PROVIDERS
+        }
+    statuses = await store.list_statuses(context.scope, SUPPORTED_OAUTH_PROVIDERS)
+    return {status.provider: status for status in statuses}
 
 
 def _ensure_enabled(context: SettingsContext) -> None:

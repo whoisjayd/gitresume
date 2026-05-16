@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
-import type { DashboardSettings, ModelEntry, SessionInfo } from "./api/generations";
+import type { DashboardSettings, ModelEntry, OAuthProviderStatus, SessionInfo } from "./api/generations";
 import { ProgressTimeline } from "./components/ProgressTimeline";
 import { ResultPanel } from "./components/ResultPanel";
 
@@ -122,6 +122,41 @@ const defaultModels: { models: ModelEntry[] } = {
   ],
 };
 
+const defaultOauthProviders: { providers: OAuthProviderStatus[] } = {
+  providers: [
+    {
+      provider: "github_copilot",
+      connected: false,
+      executable: false,
+      supportsDeviceCode: false,
+      connectionType: null,
+      accountLabel: null,
+      connectedAt: null,
+      accounts: [],
+      status: "Connect github_copilot with a manually configured server-stored OAuth token.",
+    },
+    {
+      provider: "chatgpt",
+      connected: false,
+      executable: false,
+      supportsDeviceCode: false,
+      connectionType: null,
+      accountLabel: null,
+      connectedAt: null,
+      accounts: [],
+      status: "Connect chatgpt with a manually configured server-stored OAuth token.",
+    },
+  ],
+};
+
+const connectedOauthModels: { models: ModelEntry[] } = {
+  models: defaultModels.models.map((model) =>
+    model.provider === "github_copilot"
+      ? { ...model, isAvailable: true, status: null }
+      : model,
+  ),
+};
+
 const defaultSettings: DashboardSettings = {
   appMode: "self_hosted",
   allowSavedByok: true,
@@ -150,9 +185,26 @@ const defaultSettings: DashboardSettings = {
   ],
 };
 
-function mockFetch(options: { session?: typeof defaultSession; models?: typeof defaultModels; settings?: typeof defaultSettings } = {}) {
+function githubAccount(id: string, accountLabel: string) {
+  return {
+    id,
+    provider: "github_copilot",
+    connectionType: "manual_token" as const,
+    accountLabel,
+    connectedAt: "2026-05-15T00:00:00Z",
+    expiresAt: null,
+    lastRefreshedAt: null,
+    lastUsedAt: null,
+    isActive: true,
+    executable: true,
+    status: null,
+  };
+}
+
+function mockFetch(options: { session?: typeof defaultSession; models?: typeof defaultModels; settings?: typeof defaultSettings; oauthProviders?: typeof defaultOauthProviders } = {}) {
   const session = options.session ?? defaultSession;
-  const models = options.models ?? defaultModels;
+  let models = options.models ?? defaultModels;
+  let oauthProviders = options.oauthProviders ?? defaultOauthProviders;
   let settings = options.settings ?? defaultSettings;
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = String(input);
@@ -167,6 +219,43 @@ function mockFetch(options: { session?: typeof defaultSession; models?: typeof d
 
     if (url === "/api/models") {
       return new Response(JSON.stringify(models), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
+    if (url === "/api/oauth-providers" && (!init?.method || init.method === "GET")) {
+      return new Response(JSON.stringify(oauthProviders), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
+    if (url === "/api/oauth-providers/github_copilot/connect" && init?.method === "POST") {
+      const body = JSON.parse(String(init.body));
+      const accounts = oauthProviders.providers.find((provider) => provider.provider === "github_copilot")?.accounts ?? [];
+      const account = githubAccount(`acct-${accounts.length + 1}`, body.accountLabel || `Account ${accounts.length + 1}`);
+      oauthProviders = {
+        providers: oauthProviders.providers.map((provider) => provider.provider === "github_copilot" ? { ...provider, connected: true, executable: true, connectionType: "manual_token", accountLabel: account.accountLabel, accounts: [...accounts, account], status: "Connected with server-stored manual OAuth token account(s)." } : provider),
+      };
+      models = connectedOauthModels;
+      return new Response(JSON.stringify(oauthProviders.providers[0]), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
+    if (url.startsWith("/api/oauth-providers/github_copilot/accounts/") && init?.method === "PUT") {
+      const accountId = url.split("/").at(-1);
+      oauthProviders = {
+        providers: oauthProviders.providers.map((provider) => provider.provider === "github_copilot" ? { ...provider, accounts: (provider.accounts ?? []).map((account) => account.id === accountId ? { ...account, lastRefreshedAt: "2026-05-15T00:03:00Z" } : account) } : provider),
+      };
+      return new Response(JSON.stringify(oauthProviders.providers[0]), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
+    if (url.startsWith("/api/oauth-providers/github_copilot/accounts/") && init?.method === "DELETE") {
+      const accountId = url.split("/").at(-1);
+      oauthProviders = {
+        providers: oauthProviders.providers.map((provider) => provider.provider === "github_copilot" ? { ...provider, accounts: (provider.accounts ?? []).filter((account) => account.id !== accountId) } : provider),
+      };
+      return new Response(null, { status: 204 });
+    }
+
+    if (url === "/api/oauth-providers/github_copilot" && init?.method === "DELETE") {
+      oauthProviders = defaultOauthProviders;
+      models = defaultModels;
+      return new Response(null, { status: 204 });
     }
 
     if (url === "/api/settings" && (!init?.method || init.method === "GET")) {
@@ -294,6 +383,106 @@ describe("GitResume SPA", () => {
 
     expect(await screen.findByText(/hosted dashboards require github login/i)).toBeTruthy();
     expect(screen.getByRole("link", { name: /login with github/i }).getAttribute("href")).toBe("/api/session/login?next=/dashboard");
+  });
+
+  it("connects and disconnects OAuth providers without leaking manual tokens", async () => {
+    const fetchMock = mockFetch();
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /oauth model providers/i })).toBeTruthy();
+    expect(screen.getAllByText(/github_copilot/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/not connected/i).length).toBeGreaterThan(0);
+
+    await user.type(screen.getByLabelText(/github_copilot manual token/i), "ghu-ui-secret-token");
+    await user.type(screen.getByLabelText(/github_copilot account label/i), "Work Copilot");
+    await user.click(screen.getByRole("button", { name: /^connect github_copilot$/i }));
+
+    await screen.findByRole("button", { name: /disconnect github_copilot/i });
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => url === "/api/models")).toHaveLength(2));
+    expect(screen.queryByDisplayValue("ghu-ui-secret-token")).toBeNull();
+    expect(document.body.textContent).not.toContain("ghu-ui-secret-token");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/oauth-providers/github_copilot/connect",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ accessToken: "ghu-ui-secret-token", refreshToken: null, expiresAt: null, accountLabel: "Work Copilot" }),
+      }),
+    );
+
+    await user.click(screen.getByRole("button", { name: /disconnect github_copilot/i }));
+
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => url === "/api/models")).toHaveLength(3));
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/oauth-providers/github_copilot",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
+  it("lists multiple OAuth accounts and refreshes or deletes one account", async () => {
+    const fetchMock = mockFetch({
+      oauthProviders: {
+        providers: [
+          {
+            ...defaultOauthProviders.providers[0],
+            connected: true,
+            executable: true,
+            connectionType: "manual_token",
+            accountLabel: "Work Copilot",
+            accounts: [githubAccount("acct-1", "Work Copilot"), githubAccount("acct-2", "Personal Copilot")],
+          },
+          defaultOauthProviders.providers[1],
+        ],
+      },
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    expect((await screen.findAllByText(/Work Copilot/i)).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Personal Copilot/i).length).toBeGreaterThan(0);
+
+    await user.type(screen.getByLabelText(/github_copilot manual token/i), "ghu-third-secret");
+    await user.type(screen.getByLabelText(/github_copilot refresh token/i), "refresh-third-secret");
+    await user.type(screen.getByLabelText(/github_copilot token expiry/i), "2026-06-01T12:30");
+    await user.type(screen.getByLabelText(/github_copilot account label/i), "Side Copilot");
+    await user.click(screen.getByRole("button", { name: /^connect github_copilot$/i }));
+
+    await waitFor(() => expect(screen.getAllByText(/Side Copilot/i).length).toBeGreaterThan(0));
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/oauth-providers/github_copilot/connect",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ accessToken: "ghu-third-secret", refreshToken: "refresh-third-secret", expiresAt: "2026-06-01T12:30", accountLabel: "Side Copilot" }),
+      }),
+    );
+    expect(document.body.textContent).not.toContain("ghu-third-secret");
+    expect(document.body.textContent).not.toContain("refresh-third-secret");
+
+    await user.type(screen.getByLabelText(/replacement token for Work Copilot/i), "ghu-refresh-secret");
+    await user.type(screen.getByLabelText(/replacement refresh token for Work Copilot/i), "refresh-replacement-secret");
+    await user.type(screen.getByLabelText(/replacement expiry for Work Copilot/i), "2026-07-01T08:45");
+    await user.click(screen.getByRole("button", { name: /refresh Work Copilot/i }));
+
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => url === "/api/models")).toHaveLength(3));
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/oauth-providers/github_copilot/accounts/acct-1",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({ accessToken: "ghu-refresh-secret", refreshToken: "refresh-replacement-secret", expiresAt: "2026-07-01T08:45" }),
+      }),
+    );
+    expect(document.body.textContent).not.toContain("ghu-refresh-secret");
+    expect(document.body.textContent).not.toContain("refresh-replacement-secret");
+
+    await user.click(screen.getByRole("button", { name: /disconnect Personal Copilot/i }));
+
+    await waitFor(() => expect(screen.queryByText(/Personal Copilot/i)).toBeNull());
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/oauth-providers/github_copilot/accounts/acct-2",
+      expect.objectContaining({ method: "DELETE" }),
+    );
   });
 
   it("renders model browser, disables unavailable models, and includes selected model and BYOK fields in generation body", async () => {

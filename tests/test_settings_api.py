@@ -92,6 +92,21 @@ def test_put_default_model_returns_updated_dashboard_settings() -> None:
     assert response.json()["defaultModel"] == "gpt-4o-mini"
 
 
+def test_put_default_model_accepts_connected_oauth_model() -> None:
+    client = make_client(allow_saved_byok=True, settings_encryption_key=SETTINGS_KEY)
+    connected = client.post(
+        "/api/oauth-providers/github_copilot/connect",
+        json={"accessToken": "ghu-secret-token"},
+    )
+    assert connected.status_code == 200
+
+    response = client.put("/api/settings/default-model", json={"model": "github_copilot/gpt-4.1"})
+
+    assert response.status_code == 200
+    assert response.json()["defaultModel"] == "github_copilot/gpt-4.1"
+    assert "ghu-secret-token" not in response.text
+
+
 def test_put_default_model_rejects_unavailable_model() -> None:
     client = make_client(allow_saved_byok=True, settings_encryption_key=SETTINGS_KEY)
 
@@ -105,6 +120,15 @@ def test_put_default_model_rejects_unknown_model() -> None:
     client = make_client(allow_saved_byok=True, settings_encryption_key=SETTINGS_KEY)
 
     response = client.put("/api/settings/default-model", json={"model": "unknown/provider-model"})
+
+    assert response.status_code == 422
+    assert "Unknown model" in response.json()["detail"]
+
+
+def test_put_default_model_rejects_unknown_supported_oauth_provider_model() -> None:
+    client = make_client(allow_saved_byok=True, settings_encryption_key=SETTINGS_KEY)
+
+    response = client.put("/api/settings/default-model", json={"model": "github_copilot/new-model"})
 
     assert response.status_code == 422
     assert "Unknown model" in response.json()["detail"]
@@ -142,6 +166,25 @@ def test_provider_key_rejects_unavailable_restricted_model() -> None:
 
     assert response.status_code == 422
     assert "not available" in response.json()["detail"]
+
+
+def test_provider_key_accepts_openrouter_free_model_restriction() -> None:
+    client = make_client(allow_saved_byok=True, settings_encryption_key=SETTINGS_KEY)
+
+    response = client.post(
+        "/api/settings/provider-keys",
+        json={
+            "provider": "openrouter",
+            "label": "OpenRouter Free",
+            "secret": "openrouter-secret",
+            "model": "openrouter/meta-llama/llama-3.1-8b-instruct:free",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["provider"] == "openrouter"
+    assert response.json()["model"] == "openrouter/meta-llama/llama-3.1-8b-instruct:free"
+    assert "openrouter-secret" not in response.text
 
 
 def test_hosted_saved_keys_require_github_login() -> None:

@@ -13,9 +13,15 @@ The React dashboard is the main GitResume interface. It exposes generation contr
 - `GET /api/settings` returns app mode, saved BYOK availability, default model, saved-key metadata, and disabled reason when applicable.
 - `PUT /api/settings/default-model` stores the selected default model when saved settings are enabled.
 - `POST /api/settings/provider-keys` saves encrypted provider keys.
+- `GET /api/oauth-providers` lists OAuth provider status and account metadata.
+- `POST /api/oauth-providers/{provider}/connect` adds an encrypted manual-token OAuth account.
+- `PUT /api/oauth-providers/{provider}/accounts/{account_id}` manually replaces or refreshes an OAuth account token.
+- `DELETE /api/oauth-providers/{provider}/accounts/{account_id}` removes one OAuth account.
 - `POST /api/generations` starts a generation job.
 - `GET /api/generations/{generation_id}` fetches generation state.
 - `GET /api/generations/{generation_id}/events` streams generation events with SSE.
+
+Related model-provider OAuth endpoints are documented in [OAuth providers](oauth-providers.mdx).
 
 ## Navigation
 

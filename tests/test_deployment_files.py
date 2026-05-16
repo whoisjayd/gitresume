@@ -131,6 +131,7 @@ def test_env_example_documents_self_hosted_runtime_settings_without_secret_value
         "ANTHROPIC_API_KEY=",
         "GEMINI_API_KEY=",
         "GROQ_API_KEY=",
+        "OPENROUTER_API_KEY=",
     ):
         assert key in env_example
 
@@ -144,6 +145,7 @@ def test_env_example_documents_self_hosted_runtime_settings_without_secret_value
         "ANTHROPIC_API_KEY=",
         "GEMINI_API_KEY=",
         "GROQ_API_KEY=",
+        "OPENROUTER_API_KEY=",
     ):
         assert empty_secret in env_example
     for accidental_secret_marker in ("sk-", "ghp_", "github_pat_", "xoxb-"):
@@ -249,5 +251,9 @@ def test_docs_describe_current_byok_hosted_and_oauth_model_constraints() -> None
     for content in (models, oauth):
         assert "GitHub Copilot" in content
         assert "ChatGPT Codex" in content
-        assert "visible but unavailable" in content
-        assert "not selectable" in content
+        assert "manual" in content
+        assert "device-code" in content
+    assert "OpenRouter" in models
+    assert ":free" in models
+    assert "becomes selectable only when" in models
+    assert "become selectable only when" in oauth

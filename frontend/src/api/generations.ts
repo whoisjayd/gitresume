@@ -103,6 +103,32 @@ export type DashboardSettings = {
   disabledReason?: string | null;
 };
 
+export type OAuthProviderAccount = {
+  id: string;
+  provider: string;
+  connectionType: "manual_token";
+  accountLabel?: string | null;
+  connectedAt: string;
+  expiresAt?: string | null;
+  lastRefreshedAt?: string | null;
+  lastUsedAt?: string | null;
+  isActive: boolean;
+  executable: boolean;
+  status?: string | null;
+};
+
+export type OAuthProviderStatus = {
+  provider: string;
+  connected: boolean;
+  executable: boolean;
+  supportsDeviceCode: boolean;
+  connectionType?: "manual_token" | null;
+  accountLabel?: string | null;
+  connectedAt?: string | null;
+  accounts: OAuthProviderAccount[];
+  status?: string | null;
+};
+
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const body = await response.text();
@@ -141,6 +167,43 @@ export async function listModels(): Promise<ModelEntry[]> {
 
 export async function getDashboardSettings(): Promise<DashboardSettings> {
   return readJson<DashboardSettings>(await fetch("/api/settings"));
+}
+
+export async function listOAuthProviders(): Promise<OAuthProviderStatus[]> {
+  const response = await readJson<{ providers: OAuthProviderStatus[] }>(await fetch("/api/oauth-providers"));
+  return response.providers;
+}
+
+export async function connectOAuthProvider(input: { provider: string; accessToken: string; refreshToken?: string | null; expiresAt?: string | null; accountLabel?: string | null }): Promise<OAuthProviderStatus> {
+  return readJson<OAuthProviderStatus>(await fetch(`/api/oauth-providers/${input.provider}/connect`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ accessToken: input.accessToken, refreshToken: input.refreshToken ?? null, expiresAt: input.expiresAt ?? null, accountLabel: input.accountLabel ?? null }),
+  }));
+}
+
+export async function updateOAuthProviderAccount(input: { provider: string; accountId: string; accessToken: string; refreshToken?: string | null; expiresAt?: string | null }): Promise<OAuthProviderStatus> {
+  return readJson<OAuthProviderStatus>(await fetch(`/api/oauth-providers/${input.provider}/accounts/${input.accountId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ accessToken: input.accessToken, refreshToken: input.refreshToken ?? null, expiresAt: input.expiresAt ?? null }),
+  }));
+}
+
+export async function disconnectOAuthProviderAccount(provider: string, accountId: string): Promise<void> {
+  const response = await fetch(`/api/oauth-providers/${provider}/accounts/${accountId}`, { method: "DELETE" });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(body || `Request failed with ${response.status}`);
+  }
+}
+
+export async function disconnectOAuthProvider(provider: string): Promise<void> {
+  const response = await fetch(`/api/oauth-providers/${provider}`, { method: "DELETE" });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(body || `Request failed with ${response.status}`);
+  }
 }
 
 export async function saveProviderKey(input: { provider: string; label: string; secret: string; model?: string | null }): Promise<ProviderKeyMetadata> {

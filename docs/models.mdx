@@ -11,10 +11,14 @@ description: Understand how GitResume exposes LiteLLM text models and unavailabl
 
 Available chat and completion models can be selected in the dashboard and sent with `/api/generations`. The settings API rejects unknown models and models marked unavailable.
 
+## OpenRouter free models
+
+GitResume includes explicit OpenRouter `:free` fallback entries even when LiteLLM metadata is unavailable, so self-hosted and hosted operators can select free-tier OpenRouter chat models from the dashboard. These entries use normal API-key authentication (`authType: "api_key"`), require an `OPENROUTER_API_KEY` or saved/ephemeral OpenRouter provider key, and stay visible as models such as `openrouter/meta-llama/llama-3.1-8b-instruct:free`. OpenRouter controls the final free-model availability, rate limits, and routing behavior.
+
 ## Responses models
 
-LiteLLM entries with `responses` mode are listed for visibility, but they are marked unavailable because Responses API execution is not implemented in the worker yet.
+LiteLLM entries with `responses` mode are listed for visibility. API-key responses entries remain unavailable unless a supported execution path is added. OAuth responses entries can become selectable only after their provider is connected and the installed LiteLLM package exposes the async Responses API used by the worker.
 
 ## OAuth catalog entries
 
-The catalog includes visible but unavailable OAuth entries such as GitHub Copilot and ChatGPT Codex models. They show status text, are not selectable for generation, and remain unavailable until OAuth execution is implemented.
+The catalog includes OAuth entries such as GitHub Copilot and ChatGPT Codex models. They show truthful status text while disconnected and are disabled in generation forms. A supported OAuth entry becomes selectable only when `GET /api/oauth-providers` reports the provider connected and executable, which requires at least one active, non-expired account. Multiple accounts per provider are supported and selected by Redis round-robin rotation at execution time. GitResume currently supports a manual server-side token connection and refresh/replacement abstraction rather than initiating browser device-code OAuth flows.

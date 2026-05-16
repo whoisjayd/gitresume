@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sse_starlette.sse import EventSourceResponse
 
 from gitresume.api.dependencies import get_generation_state_service, get_generation_task_dispatcher
+from gitresume.api.routes.oauth_providers import oauth_provider_context, oauth_provider_store
 from gitresume.schemas.generation import (
     GenerationCreateRequest,
     GenerationCreateResponse,
@@ -16,6 +17,11 @@ from gitresume.schemas.generation import (
 from gitresume.services.generation_state_service import RedisGenerationStateService
 from gitresume.services.generation_task_dispatcher import GenerationTaskDispatcher
 from gitresume.services.model_catalog import find_model_entry
+from gitresume.services.oauth_provider_store import (
+    SUPPORTED_OAUTH_PROVIDERS,
+    OAuthProviderStatus,
+    disconnected_status,
+)
 
 router = APIRouter(prefix="/generations")
 generation_state_dependency = Depends(get_generation_state_service)
@@ -34,13 +40,19 @@ async def create_generation(
     state_service: RedisGenerationStateService = generation_state_dependency,
     dispatcher: GenerationTaskDispatcher = generation_dispatcher_dependency,
 ) -> GenerationCreateResponse:
+    oauth_statuses = await _oauth_provider_statuses(http_request)
     if request.model is not None:
-        model_entry = find_model_entry(request.model)
-        if model_entry is not None and not model_entry.is_available:
+        model_entry = find_model_entry(request.model, oauth_statuses)
+        if model_entry is None:
+            if request.model.split("/", 1)[0] in SUPPORTED_OAUTH_PROVIDERS:
+                raise HTTPException(status_code=422, detail=f"Unknown model: {request.model}")
+        elif not model_entry.is_available:
             raise HTTPException(
                 status_code=422,
                 detail=f"Selected model is not available: {model_entry.status or request.model}",
             )
+        if model_entry is not None and model_entry.auth_type == "oauth":
+            request.oauth_provider_scope = _oauth_provider_scope(http_request)
     request.provider_key_scope = _provider_key_scope(http_request, request)
     generation_id = f"gen-{uuid4().hex}"
     await state_service.create_generation(generation_id, request)
@@ -69,6 +81,32 @@ async def create_generation(
         events_url=f"/api/generations/{generation_id}/events",
         redirect_path=f"/generations/{generation_id}",
     )
+
+
+async def _oauth_provider_statuses(http_request: Request) -> dict[str, OAuthProviderStatus]:
+    context = oauth_provider_context(http_request)
+    store = oauth_provider_store(http_request, context.settings) if context.enabled else None
+    if store is None:
+        reason = context.disabled_reason if not context.enabled else None
+        return {
+            provider: disconnected_status(provider, reason)
+            for provider in SUPPORTED_OAUTH_PROVIDERS
+        }
+    statuses = await store.list_statuses(context.scope, SUPPORTED_OAUTH_PROVIDERS)
+    return {status.provider: status for status in statuses}
+
+
+def _oauth_provider_scope(http_request: Request) -> str:
+    context = oauth_provider_context(http_request)
+    if not context.enabled:
+        error_status = (
+            status.HTTP_401_UNAUTHORIZED if context.login_required else status.HTTP_403_FORBIDDEN
+        )
+        raise HTTPException(
+            status_code=error_status,
+            detail=context.disabled_reason or "OAuth provider connection is required.",
+        )
+    return context.scope
 
 
 def _provider_key_scope(http_request: Request, request: GenerationCreateRequest) -> str | None:

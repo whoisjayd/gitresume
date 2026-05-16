@@ -94,12 +94,65 @@ def test_model_catalog_includes_oauth_text_and_responses_models_when_metadata_mi
     assert by_id["github_copilot/gpt-4.1"].requires_api_key is False
     assert by_id["github_copilot/gpt-4.1"].auth_type == "oauth"
     assert by_id["github_copilot/gpt-4.1"].is_available is False
-    assert "not implemented" in (by_id["github_copilot/gpt-4.1"].status or "")
+    assert "Connect github_copilot" in (by_id["github_copilot/gpt-4.1"].status or "")
     assert by_id["chatgpt/codex-mini-latest"].mode == "responses"
     assert by_id["chatgpt/codex-mini-latest"].supports_oauth is True
     assert by_id["chatgpt/codex-mini-latest"].is_available is False
-    assert "Responses" in (by_id["chatgpt/codex-mini-latest"].status or "")
+    assert "Connect chatgpt" in (by_id["chatgpt/codex-mini-latest"].status or "")
     assert entries == sorted(entries, key=lambda entry: (entry.provider, entry.id))
+
+
+def test_model_catalog_includes_openrouter_free_models_when_metadata_missing(monkeypatch) -> None:
+    from gitresume.services import model_catalog
+
+    monkeypatch.setattr(model_catalog.litellm, "model_cost", {}, raising=False)
+
+    by_id = {entry.id: entry for entry in model_catalog.LiteLLMModelCatalog().list_models()}
+    free_model = by_id["openrouter/meta-llama/llama-3.1-8b-instruct:free"]
+
+    assert free_model.provider == "openrouter"
+    assert free_model.mode == "chat"
+    assert free_model.auth_type == "api_key"
+    assert free_model.requires_api_key is True
+    assert free_model.supports_oauth is False
+    assert free_model.is_available is True
+    assert "free" in (free_model.status or "").lower()
+
+
+def test_model_catalog_marks_oauth_models_available_only_when_connected(monkeypatch) -> None:
+    from gitresume.services import model_catalog
+    from gitresume.services.oauth_provider_store import OAuthProviderStatus
+
+    monkeypatch.setattr(model_catalog.litellm, "model_cost", {}, raising=False)
+    statuses = {
+        "github_copilot": OAuthProviderStatus(provider="github_copilot", connected=True),
+        "chatgpt": OAuthProviderStatus(provider="chatgpt", connected=True),
+    }
+
+    by_id = {entry.id: entry for entry in model_catalog.LiteLLMModelCatalog(statuses).list_models()}
+
+    assert by_id["github_copilot/gpt-4.1"].is_available is True
+    assert by_id["github_copilot/gpt-4.1"].status is None
+    assert by_id["chatgpt/codex-mini-latest"].is_available is True
+    assert by_id["chatgpt/codex-mini-latest"].status is None
+
+
+def test_find_model_entry_uses_oauth_provider_status(monkeypatch) -> None:
+    from gitresume.services import model_catalog
+    from gitresume.services.oauth_provider_store import OAuthProviderStatus
+
+    monkeypatch.setattr(model_catalog.litellm, "model_cost", {}, raising=False)
+
+    disconnected = model_catalog.find_model_entry("github_copilot/gpt-4.1")
+    connected = model_catalog.find_model_entry(
+        "github_copilot/gpt-4.1",
+        {"github_copilot": OAuthProviderStatus(provider="github_copilot", connected=True)},
+    )
+
+    assert disconnected is not None
+    assert disconnected.is_available is False
+    assert connected is not None
+    assert connected.is_available is True
 
 
 def test_provider_for_model_prefers_litellm_metadata_for_unprefixed_ids(monkeypatch) -> None:

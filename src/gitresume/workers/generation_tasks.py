@@ -12,7 +12,8 @@ from gitresume.schemas.generation import GenerationStatus
 from gitresume.services.generation_state_service import RedisGenerationStateService
 from gitresume.services.ingestion_service import RepositoryIngestionService
 from gitresume.services.key_rotation import RedisProviderKeySelector
-from gitresume.services.model_catalog import model_mode_for, provider_for_model
+from gitresume.services.model_catalog import find_model_entry, model_mode_for, provider_for_model
+from gitresume.services.oauth_provider_store import RedisOAuthProviderStore
 from gitresume.services.repository_checkout_service import (
     RepositoryCheckout,
     RepositoryCheckoutService,
@@ -89,6 +90,19 @@ async def run_generation(generation_id: str) -> None:
         selected_model = state.model or settings.ai_model
         if ephemeral_provider_api_key:
             selected_key_secret = ephemeral_provider_api_key
+        elif _selected_model_uses_oauth(selected_model):
+            if not settings.settings_encryption_key:
+                raise RuntimeError("OAuth provider selection requires settings encryption.")
+            oauth_store = RedisOAuthProviderStore(
+                redis,
+                StringEncryptor(settings.settings_encryption_key.get_secret_value()),
+            )
+            selected_key_secret = await oauth_store.select_access_token(
+                state.oauth_provider_scope or "global",
+                provider_for_model(selected_model),
+            )
+            if selected_key_secret is None:
+                raise RuntimeError("OAuth provider is not connected.")
         elif state.provider_key_id is not None or getattr(settings, "allow_saved_byok", False):
             if not settings.settings_encryption_key:
                 if state.provider_key_id is not None:
@@ -129,6 +143,11 @@ async def run_generation(generation_id: str) -> None:
         if checkout is not None:
             checkout_service.cleanup_checkout(checkout)
         await redis.aclose()
+
+
+def _selected_model_uses_oauth(model: str) -> bool:
+    entry = find_model_entry(model)
+    return bool(entry and entry.auth_type == "oauth")
 
 
 def _resume_prompt_context(context: dict[str, object], checkout: RepositoryCheckout) -> str:

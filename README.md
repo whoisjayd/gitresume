@@ -26,9 +26,9 @@ The goal of the migration is practical control. Operators can self-host with glo
 | Repository intelligence | Secure clone/checkout, Repomix packing, ranked context selection, tree-sitter analysis, dependency summaries, git-history signals, and gitingest fallback |
 | Async generation | `POST /api/generations` enqueues Taskiq work; `/api/generations/{generation_id}/events` streams Server-Sent Events |
 | Dashboard | App mode, GitHub session, model browser, generation form, result panel, progress timeline, default model, and saved provider-key metadata |
-| AI providers | LiteLLM-compatible Gemini, OpenAI, Anthropic, Groq, and other API-key models exposed by the catalog |
+| AI providers | LiteLLM-compatible Gemini, OpenAI, Anthropic, Groq, OpenRouter (including `:free` models), and other API-key models exposed by the catalog |
 | BYOK | Ephemeral per-generation `providerApiKey` plus opt-in encrypted saved keys with round-robin rotation |
-| OAuth | GitHub login is implemented for sessions; OAuth model execution entries are visible but unavailable until execution is implemented |
+| OAuth | GitHub login is implemented for sessions; supported OAuth model providers expose encrypted multi-account manual-token connect/disconnect/refresh flows and become selectable only when an account is executable |
 
 ## Hosted vs self-hosted feature matrix
 
@@ -87,9 +87,9 @@ Read more in [BYOK](docs/byok.mdx).
 
 ## Model catalog
 
-`GET /api/models` exposes LiteLLM text-capable entries with provider, mode, display name, auth type, availability, status, and context-window metadata when available. Available chat models can be selected in the dashboard.
+`GET /api/models` exposes LiteLLM text-capable entries with provider, mode, display name, auth type, availability, status, and context-window metadata when available. Available chat models can be selected in the dashboard. GitResume also includes explicit OpenRouter `:free` fallback entries such as `openrouter/meta-llama/llama-3.1-8b-instruct:free`; use `OPENROUTER_API_KEY`, a saved OpenRouter key, or ephemeral BYOK to run them.
 
-OAuth/responses entries such as GitHub Copilot and ChatGPT Codex are intentionally visible with status text, but they are unavailable until OAuth model execution and Responses API execution are implemented. The dashboard should not present them as selectable generation models.
+OAuth/responses entries such as GitHub Copilot and ChatGPT Codex are intentionally visible with status text. They remain unavailable until the corresponding OAuth provider has at least one active, executable account connected through the server-side manual-token connection flow. Multiple OAuth accounts per provider are encrypted at rest and selected with Redis round-robin rotation, similar to saved API keys. Optional refresh tokens and expiries can be stored encrypted; operators can manually replace/refresh account tokens, and server-side refresh can be provided through an injectable refresher. GitResume does not initiate browser device-code flows for model providers because the current in-process LiteLLM integration does not expose a browser-safe flow here. Responses-mode execution uses LiteLLM's async Responses API when available.
 
 Read more in [Model catalog](docs/models.mdx) and [OAuth providers](docs/oauth-providers.mdx).
 
@@ -159,7 +159,7 @@ Copy [.env.example](.env.example) to `.env`. Important settings include:
 | `ALLOW_SAVED_BYOK` | Enables encrypted saved provider keys when true |
 | `SETTINGS_ENCRYPTION_KEY` | Fernet key or long passphrase used to encrypt saved BYOK secrets |
 | `AI_MODEL` | Default LiteLLM model |
-| `LITELLM_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY` | Provider credentials |
+| `LITELLM_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY` | Provider credentials |
 
 Never commit `.env` or provider secrets.
 
@@ -212,7 +212,7 @@ pyproject.toml / uv.lock    Backend package metadata and lockfile
 - Repositories are cloned into temporary worker directories for analysis.
 - GitHub tokens are not sent through Taskiq payloads; worker token handoff uses Redis and one-time retrieval.
 - Ephemeral provider keys are stored one-time in Redis and popped by the worker.
-- Saved provider-key secrets are encrypted at rest and never returned by API responses.
+- Saved provider-key secrets plus OAuth access/refresh tokens are encrypted at rest and never returned by API responses.
 - Private clone operations use `GIT_ASKPASS` instead of embedding tokens in git command arguments.
 - Worker failures use generic public messages and safe logging.
 - Docker build contexts ignore `.env`, local caches, virtualenvs, `.git`, and generated frontend artifacts.

@@ -1,11 +1,11 @@
 ---
 title: OAuth providers
-description: Separate implemented GitHub login from future OAuth model execution flows.
+description: Separate GitHub login from OAuth model execution connection status and manual credential flows.
 ---
 
 # OAuth providers
 
-GitResume currently implements GitHub OAuth for user sessions, not for model execution.
+GitResume implements GitHub OAuth for user sessions and a conservative OAuth-provider connection abstraction for model execution. GitResume does not initiate browser device-code flows for model providers because the current in-process LiteLLM integration does not expose a browser-safe device-code flow here.
 
 ## Implemented today: GitHub login
 
@@ -18,6 +18,21 @@ GitHub login powers hosted-mode dashboard identity and saved BYOK scoping:
 
 The OAuth app must provide `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, and `CALLBACK_URL`.
 
-## Visible but unavailable: OAuth models
+## OAuth model provider connections
 
-The model catalog includes visible but unavailable OAuth/responses entries such as GitHub Copilot and ChatGPT Codex. These entries are intentionally visible with status text so the dashboard can explain future connection paths, but they are not selectable for generation until OAuth model execution is implemented.
+`GET /api/oauth-providers` returns connection metadata for supported model OAuth providers:
+
+- `github_copilot`
+- `chatgpt`
+
+`POST /api/oauth-providers/{provider}/connect` accepts a manually supplied OAuth access token, optional refresh token, optional expiry, and optional account label. Each call adds an OAuth account for the provider instead of replacing existing accounts. Access and refresh tokens are encrypted in Redis using `SETTINGS_ENCRYPTION_KEY`; they are not stored in Starlette signed cookies and are never returned by API responses, SSE events, generation state, or retry state.
+
+`GET /api/oauth-providers` returns provider-level `connected`/`executable` status plus account metadata such as `id`, `accountLabel`, `createdAt`, `expiresAt`, `lastRefreshedAt`, `lastUsedAt`, `isActive`, and `executable`. Secrets are not included. `DELETE /api/oauth-providers/{provider}/accounts/{account_id}` removes one account, while `DELETE /api/oauth-providers/{provider}` remains available to disconnect all accounts for a provider. `PUT /api/oauth-providers/{provider}/accounts/{account_id}` lets operators manually replace/refresh an account access token and optionally update the encrypted refresh token and expiry.
+
+Hosted mode scopes provider credentials to the authenticated GitHub user. Self-hosted mode stores them in the global dashboard scope.
+
+## Model availability
+
+OAuth catalog entries such as GitHub Copilot and ChatGPT Codex remain visible when disconnected and include truthful status text. They become selectable only when the corresponding provider status is connected and executable. A provider is executable when it has at least one active, non-expired account. The worker selects among active executable accounts with deterministic Redis round-robin rotation, decrypting the selected token only at execution time.
+
+If a selected account is expired and has an encrypted refresh token, the store can refresh it through an injectable server-side `OAuthTokenRefresher` before returning the access token. The default manual-token refresher fails safely with a reconnect/refresh-required status, so browser device-code flow is still not claimed or initiated. Chat-mode OAuth entries use LiteLLM chat completion. Responses-mode OAuth entries use LiteLLM's async Responses API when present in the installed LiteLLM package; if that API is unavailable, execution fails safely with a generic public generation failure.

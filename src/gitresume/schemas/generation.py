@@ -59,6 +59,7 @@ class GenerationCreateRequest(BaseModel):
         serialization_alias="providerKeyId",
     )
     provider_key_scope: str | None = Field(default=None, exclude=True, repr=False)
+    oauth_provider_scope: str | None = Field(default=None, exclude=True, repr=False)
 
     @field_validator("repo_url")
     @classmethod
@@ -102,5 +103,6 @@ class GenerationState(BaseModel):
         exclude=True,
     )
     provider_key_scope: str | None = Field(default=None, exclude=True)
+    oauth_provider_scope: str | None = Field(default=None, exclude=True)
     created_at: datetime = Field(default_factory=utc_now, serialization_alias="createdAt")
     updated_at: datetime = Field(default_factory=utc_now, serialization_alias="updatedAt")
