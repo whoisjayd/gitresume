@@ -53,6 +53,8 @@ def test_compose_wires_api_worker_frontend_and_redis() -> None:
     )
     assert "redis-data:" in compose
     assert "curl -fsS http://localhost:8080/api/health" in compose
+    assert "healthcheck:\n      disable: true" in compose
+    assert "wget -qO- http://127.0.0.1/health" in compose
     assert "redis-cli" in compose
     assert "ping" in compose
 
@@ -65,6 +67,7 @@ def test_frontend_container_serves_vite_dist_and_proxies_api_with_sse_settings()
     assert "npm ci" in dockerfile
     assert "npm run build" in dockerfile
     assert "COPY --from=builder /app/dist" in dockerfile
+    assert "wget -qO- http://127.0.0.1/health" in dockerfile
     assert "node_modules/" in dockerignore
     assert "dist/" in dockerignore
     assert "proxy_pass http://api:8080" in nginx

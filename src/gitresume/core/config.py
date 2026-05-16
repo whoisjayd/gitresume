@@ -1,8 +1,8 @@
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import AnyHttpUrl, Field, SecretStr, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from gitresume.core.crypto import StringEncryptor
 
@@ -22,7 +22,9 @@ class Settings(BaseSettings):
     app_mode: Literal["self_hosted", "hosted"] = "self_hosted"
     log_level: str = "INFO"
     frontend_origin: str = "http://localhost:5173"
-    allowed_hosts: list[str] = Field(default_factory=lambda: ["localhost", "127.0.0.1"])
+    allowed_hosts: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["localhost", "127.0.0.1"]
+    )
 
     session_secret_key: str = "change-me-in-production"
     session_cookie_https_only: bool | None = None

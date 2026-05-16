@@ -46,6 +46,18 @@ def test_session_endpoint_defaults_to_logged_out() -> None:
     }
 
 
+def test_settings_parses_comma_separated_allowed_hosts_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ALLOWED_HOSTS", "localhost,127.0.0.1,api")
+    monkeypatch.setenv(
+        "SESSION_SECRET_KEY", "release-smoke-secret-with-more-than-thirty-two-characters"
+    )
+    monkeypatch.setenv("ENVIRONMENT", "production")
+
+    settings = Settings()
+
+    assert settings.allowed_hosts == ["localhost", "127.0.0.1", "api"]
+
+
 @pytest.mark.parametrize(
     ("repo_url", "owner", "name"),
     [
