@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     max_repo_files: int = 200
     ranked_context_file_limit: int = 20
     ranked_context_chars_per_file: int = 8_000
+    enable_guided_analysis: bool = False
+    guided_analysis_max_actions: int = Field(default=6, ge=1, le=25)
+    guided_analysis_max_chars_per_observation: int = Field(default=4_000, ge=100, le=20_000)
+    guided_analysis_max_observations: int = Field(default=6, ge=1, le=25)
+    enable_contribution_analysis: bool = False
+    contribution_analysis_default_days: int = Field(default=300, ge=1, le=3650)
+    contribution_analysis_max_commits: int = Field(default=100, ge=1, le=500)
+    contribution_analysis_max_files: int = Field(default=500, ge=1, le=2_000)
     generation_ttl_seconds: int = 86_400
     generation_event_max_len: int = 200
 

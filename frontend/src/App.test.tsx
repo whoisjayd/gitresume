@@ -14,6 +14,16 @@ const stylesheet = readFileSync(join(process.cwd(), "src", "styles.css"), "utf-8
 
 type Listener = (event: MessageEvent<string>) => void;
 
+type MockFetchOptions = {
+  session?: typeof defaultSession;
+  models?: typeof defaultModels;
+  settings?: typeof defaultSettings;
+  oauthProviders?: typeof defaultOauthProviders;
+  generationError?: unknown;
+  settingsSaveError?: unknown;
+  oauthConnectError?: unknown;
+};
+
 class MockEventSource {
   static instances: MockEventSource[] = [];
 
@@ -119,6 +129,17 @@ const defaultModels: { models: ModelEntry[] } = {
       isAvailable: true,
       status: null,
     },
+    {
+      id: "openrouter/meta-llama/llama-3.1-8b-instruct:free",
+      provider: "openrouter",
+      mode: "chat",
+      displayName: "Meta Llama 3.1 8B Instruct Free",
+      authType: "api_key",
+      supportsOauth: false,
+      requiresApiKey: true,
+      isAvailable: true,
+      status: null,
+    },
   ],
 };
 
@@ -163,6 +184,9 @@ const defaultSettings: DashboardSettings = {
   savedKeysEnabled: true,
   loginRequired: false,
   defaultModel: "openai/gpt-4o-mini",
+  guidedAnalysisEnabled: false,
+  contributionAnalysisEnabled: false,
+  contributionAnalysisDefaultDays: 300,
   providerKeys: [
     {
       id: "key-123",
@@ -179,6 +203,15 @@ const defaultSettings: DashboardSettings = {
       label: "Gemini scoped",
       model: "gemini/gemini-1.5-flash",
       createdAt: "2026-05-15T00:01:00Z",
+      lastUsedAt: null,
+      isActive: true,
+    },
+    {
+      id: "key-gemini-provider",
+      provider: "gemini",
+      label: "Gemini provider-wide",
+      model: null,
+      createdAt: "2026-05-15T00:02:00Z",
       lastUsedAt: null,
       isActive: true,
     },
@@ -201,7 +234,7 @@ function githubAccount(id: string, accountLabel: string) {
   };
 }
 
-function mockFetch(options: { session?: typeof defaultSession; models?: typeof defaultModels; settings?: typeof defaultSettings; oauthProviders?: typeof defaultOauthProviders } = {}) {
+function mockFetch(options: MockFetchOptions = {}) {
   const session = options.session ?? defaultSession;
   let models = options.models ?? defaultModels;
   let oauthProviders = options.oauthProviders ?? defaultOauthProviders;
@@ -226,6 +259,9 @@ function mockFetch(options: { session?: typeof defaultSession; models?: typeof d
     }
 
     if (url === "/api/oauth-providers/github_copilot/connect" && init?.method === "POST") {
+      if (options.oauthConnectError) {
+        return new Response(JSON.stringify(options.oauthConnectError), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
       const body = JSON.parse(String(init.body));
       const accounts = oauthProviders.providers.find((provider) => provider.provider === "github_copilot")?.accounts ?? [];
       const account = githubAccount(`acct-${accounts.length + 1}`, body.accountLabel || `Account ${accounts.length + 1}`);
@@ -263,6 +299,9 @@ function mockFetch(options: { session?: typeof defaultSession; models?: typeof d
     }
 
     if (url === "/api/settings/provider-keys" && init?.method === "POST") {
+      if (options.settingsSaveError) {
+        return new Response(JSON.stringify(options.settingsSaveError), { status: 400, headers: { "Content-Type": "application/json" } });
+      }
       settings = {
         ...settings,
         providerKeys: [
@@ -293,6 +332,9 @@ function mockFetch(options: { session?: typeof defaultSession; models?: typeof d
     }
 
     if (url === "/api/generations" && init?.method === "POST") {
+      if (options.generationError) {
+        return new Response(JSON.stringify(options.generationError), { status: 422, headers: { "Content-Type": "application/json" } });
+      }
       return new Response(
         JSON.stringify({
           generationId: "gen-1",
@@ -319,6 +361,7 @@ describe("GitResume SPA", () => {
   beforeEach(() => {
     MockEventSource.instances = [];
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     try {
       window.localStorage.clear();
     } catch {
@@ -387,6 +430,8 @@ describe("GitResume SPA", () => {
 
   it("connects and disconnects OAuth providers without leaking manual tokens", async () => {
     const fetchMock = mockFetch();
+    const confirm = vi.fn(() => true);
+    vi.stubGlobal("confirm", confirm);
     const user = userEvent.setup();
 
     render(<App />);
@@ -414,6 +459,7 @@ describe("GitResume SPA", () => {
     await user.click(screen.getByRole("button", { name: /disconnect github_copilot/i }));
 
     await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => url === "/api/models")).toHaveLength(3));
+    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/disconnect github_copilot/i));
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/oauth-providers/github_copilot",
       expect.objectContaining({ method: "DELETE" }),
@@ -436,6 +482,8 @@ describe("GitResume SPA", () => {
         ],
       },
     });
+    const confirm = vi.fn(() => true);
+    vi.stubGlobal("confirm", confirm);
     const user = userEvent.setup();
 
     render(<App />);
@@ -479,6 +527,7 @@ describe("GitResume SPA", () => {
     await user.click(screen.getByRole("button", { name: /disconnect Personal Copilot/i }));
 
     await waitFor(() => expect(screen.queryByText(/Personal Copilot/i)).toBeNull());
+    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/disconnect Personal Copilot/i));
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/oauth-providers/github_copilot/accounts/acct-2",
       expect.objectContaining({ method: "DELETE" }),
@@ -494,6 +543,7 @@ describe("GitResume SPA", () => {
 
     const modelSelect = await screen.findByLabelText(/generation model/i);
     expect(within(modelSelect).getByRole("option", { name: /GPT 4.1 unavailable/i }).hasAttribute("disabled")).toBe(true);
+    expect(within(modelSelect).getByRole("option", { name: /Meta Llama 3.1 8B Instruct Free/i })).toBeTruthy();
     expect(screen.getByText(/OAuth connection is not implemented yet/i)).toBeTruthy();
 
     await user.type(screen.getByLabelText(/repository url/i), "https://github.com/acme/rocket");
@@ -517,6 +567,65 @@ describe("GitResume SPA", () => {
       }),
     );
     expect(MockEventSource.instances[0].url).not.toContain("sk-provider-secret");
+  });
+
+  it("shows author contribution scope controls when enabled and submits scoped analysis fields", async () => {
+    const fetchMock = mockFetch({
+      settings: {
+        ...defaultSettings,
+        guidedAnalysisEnabled: true,
+        contributionAnalysisEnabled: true,
+        contributionAnalysisDefaultDays: 180,
+      },
+    });
+    vi.stubGlobal("EventSource", MockEventSource);
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await user.type(await screen.findByLabelText(/repository url/i), "https://github.com/acme/rocket");
+    await user.click(screen.getByRole("checkbox", { name: /author contribution scope/i }));
+    expect((screen.getByLabelText(/analysis days/i) as HTMLInputElement).value).toBe("180");
+    await user.type(screen.getByLabelText(/analysis author/i), "Jaydeep Solanki");
+    await user.clear(screen.getByLabelText(/analysis days/i));
+    await user.type(screen.getByLabelText(/analysis days/i), "90");
+    await user.click(screen.getByRole("button", { name: /generate resume/i }));
+
+    await waitFor(() => expect(MockEventSource.instances).toHaveLength(1));
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/generations",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          repoUrl: "https://github.com/acme/rocket",
+          jobDescription: null,
+          githubToken: null,
+          model: "openai/gpt-4o-mini",
+          providerKeyId: null,
+          providerApiKey: null,
+          analysisAuthor: "Jaydeep Solanki",
+          analysisDays: 90,
+        }),
+      }),
+    );
+  });
+
+  it("hides author contribution scope controls when contribution analysis is disabled", async () => {
+    mockFetch({
+      settings: {
+        ...defaultSettings,
+        guidedAnalysisEnabled: true,
+        contributionAnalysisEnabled: false,
+        contributionAnalysisDefaultDays: 180,
+      },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByLabelText(/repository url/i)).toBeTruthy();
+    expect(screen.queryByRole("checkbox", { name: /author contribution scope/i })).toBeNull();
+    expect(screen.queryByLabelText(/analysis author/i)).toBeNull();
+    expect(screen.queryByLabelText(/analysis days/i)).toBeNull();
   });
 
   it("clears an incompatible saved provider key when the selected model changes", async () => {
@@ -548,8 +657,41 @@ describe("GitResume SPA", () => {
     );
   });
 
+  it("hides provider-wide saved keys from other model providers", async () => {
+    mockFetch();
+
+    render(<App />);
+
+    const savedProviderKey = await screen.findByLabelText(/saved provider key/i);
+
+    expect(within(savedProviderKey).getByRole("option", { name: /Work OpenAI/i })).toBeTruthy();
+    expect(within(savedProviderKey).queryByRole("option", { name: /Gemini provider-wide/i })).toBeNull();
+  });
+
+  it("filters saved keys by selected model provider and optional exact model", async () => {
+    mockFetch();
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    const modelSelect = await screen.findByLabelText(/generation model/i);
+    const savedProviderKey = screen.getByLabelText(/saved provider key/i);
+
+    expect(within(savedProviderKey).getByRole("option", { name: /Work OpenAI/i })).toBeTruthy();
+    expect(within(savedProviderKey).queryByRole("option", { name: /Gemini scoped/i })).toBeNull();
+    expect(within(savedProviderKey).queryByRole("option", { name: /Gemini provider-wide/i })).toBeNull();
+
+    await user.selectOptions(modelSelect, "gemini/gemini-1.5-flash");
+
+    expect(within(savedProviderKey).queryByRole("option", { name: /Work OpenAI/i })).toBeNull();
+    expect(within(savedProviderKey).getByRole("option", { name: /Gemini scoped/i })).toBeTruthy();
+    expect(within(savedProviderKey).getByRole("option", { name: /Gemini provider-wide/i })).toBeTruthy();
+  });
+
   it("manages saved BYOK keys and default model without exposing secrets", async () => {
     const fetchMock = mockFetch();
+    const confirm = vi.fn(() => true);
+    vi.stubGlobal("confirm", confirm);
     const user = userEvent.setup();
 
     render(<App />);
@@ -576,7 +718,64 @@ describe("GitResume SPA", () => {
     );
 
     await user.click(screen.getByRole("button", { name: /delete Work OpenAI/i }));
+    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/delete Work OpenAI/i));
     expect(fetchMock).toHaveBeenCalledWith("/api/settings/provider-keys/key-123", expect.objectContaining({ method: "DELETE" }));
+  });
+
+  it("cancels destructive credential deletes when confirmation is declined", async () => {
+    const fetchMock = mockFetch({
+      oauthProviders: {
+        providers: [
+          {
+            ...defaultOauthProviders.providers[0],
+            connected: true,
+            executable: true,
+            connectionType: "manual_token",
+            accountLabel: "Work Copilot",
+            accounts: [githubAccount("acct-1", "Work Copilot")],
+          },
+          defaultOauthProviders.providers[1],
+        ],
+      },
+    });
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal("confirm", confirm);
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    expect(await screen.findByText("Work OpenAI")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: /delete Work OpenAI/i }));
+    await user.click(screen.getByRole("button", { name: /disconnect Work Copilot/i }));
+    await user.click(screen.getByRole("button", { name: /^disconnect github_copilot$/i }));
+
+    expect(confirm).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls.some(([url, init]) => url === "/api/settings/provider-keys/key-123" && init?.method === "DELETE")).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => url === "/api/oauth-providers/github_copilot" && init?.method === "DELETE")).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => url === "/api/oauth-providers/github_copilot/accounts/acct-1" && init?.method === "DELETE")).toBe(false);
+  });
+
+  it("surfaces BYOK and OAuth API errors as readable alerts", async () => {
+    mockFetch({
+      settingsSaveError: { detail: "Saved BYOK is disabled for hosted users." },
+      oauthConnectError: { detail: [{ msg: "OAuth token is invalid." }] },
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await user.type(await screen.findByLabelText(/key label/i), "Gemini Personal");
+    await user.selectOptions(screen.getByLabelText(/key provider/i), "gemini");
+    await user.type(screen.getByLabelText(/^api key secret/i), "gemini-secret");
+    await user.click(screen.getByRole("button", { name: /save provider key/i }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Saved BYOK is disabled for hosted users.");
+
+    await user.type(screen.getByLabelText(/github_copilot manual token/i), "bad-token");
+    await user.click(screen.getByRole("button", { name: /^connect github_copilot$/i }));
+
+    await waitFor(() => expect(screen.getAllByRole("alert").some((alert) => alert.textContent?.includes("OAuth token is invalid."))).toBe(true));
+    expect(document.body.textContent).not.toContain('"detail"');
   });
 
   it("submits a generation request without exposing the GitHub token in stream URLs", async () => {
@@ -612,6 +811,36 @@ describe("GitResume SPA", () => {
     expect(MockEventSource.instances[0].url).not.toContain("ghp_secret_token");
   });
 
+  it("clears ephemeral GitHub and provider tokens after generation creation succeeds", async () => {
+    mockFetch();
+    vi.stubGlobal("EventSource", MockEventSource);
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await user.type(screen.getByLabelText(/repository url/i), "https://github.com/acme/rocket");
+    await user.type(screen.getByLabelText(/github token/i), "ghp_secret_token");
+    await user.type(screen.getByLabelText(/provider api key/i), "sk-provider-secret");
+    await user.click(screen.getByRole("button", { name: /generate resume/i }));
+
+    await waitFor(() => expect(MockEventSource.instances).toHaveLength(1));
+    expect(screen.queryByDisplayValue("ghp_secret_token")).toBeNull();
+    expect(screen.queryByDisplayValue("sk-provider-secret")).toBeNull();
+  });
+
+  it("parses FastAPI detail errors into friendly generation messages", async () => {
+    mockFetch({ generationError: { detail: [{ msg: "Invalid repository URL." }] } });
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await user.type(screen.getByLabelText(/repository url/i), "https://github.com/acme/rocket");
+    await user.click(screen.getByRole("button", { name: /generate resume/i }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Invalid repository URL.");
+    expect(document.body.textContent).not.toContain('"detail"');
+  });
+
   it("renders progress events and falls back to status fetch for completed results", async () => {
     mockFetch();
     vi.stubGlobal("EventSource", MockEventSource);
@@ -632,6 +861,12 @@ describe("GitResume SPA", () => {
         sequence: 2,
         createdAt: "2026-05-15T00:00:02Z",
       });
+    });
+
+    await waitFor(() => expect(screen.getAllByText(/checking repository access/i).length).toBeGreaterThan(0));
+    expect(screen.getByRole("status", { name: /generation progress updates/i }).textContent).toMatch(/checking repository access/i);
+
+    act(() => {
       MockEventSource.instances[0].emit("completed", {
         generationId: "gen-1",
         eventType: "completed",
@@ -642,7 +877,6 @@ describe("GitResume SPA", () => {
       });
     });
 
-    expect(await screen.findByText(/checking repository access/i)).toBeTruthy();
     expect(await screen.findByRole("heading", { name: /rocket console/i })).toBeTruthy();
     expect(screen.getByText("React")).toBeTruthy();
     expect(screen.getByText(/built a real-time repository analysis pipeline/i)).toBeTruthy();
@@ -818,7 +1052,7 @@ describe("GitResume SPA", () => {
     expect(screen.getByText("Cloning source")).toBeTruthy();
     expect(screen.getByText("Analyzing files")).toBeTruthy();
     expect(screen.getByText("Generating resume")).toBeTruthy();
-    expect(screen.getByText("Resume ready")).toBeTruthy();
+    expect(screen.getAllByText("Resume ready").length).toBeGreaterThan(0);
   });
 
   it("maps completed SSE events onto the succeeded timeline phase", () => {
@@ -830,7 +1064,7 @@ describe("GitResume SPA", () => {
     );
 
     expect(screen.getByText("Succeeded").closest("article")?.className).toContain("complete");
-    expect(screen.getByText("Resume ready")).toBeTruthy();
+    expect(screen.getAllByText("Resume ready").length).toBeGreaterThan(0);
   });
 });
 

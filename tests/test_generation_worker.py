@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 
+from gitresume.core.config import Settings
 from gitresume.schemas.generation import GenerationState, GenerationStatus
 from gitresume.schemas.resume import ResumeDraft
 
@@ -33,6 +34,7 @@ class FakeRedis:
 
 class FakeStateService:
     instances: list["FakeStateService"] = []
+    default_token: str | None = "secret-token"
 
     def __init__(self, redis: FakeRedis) -> None:
         self.redis = redis
@@ -45,7 +47,7 @@ class FakeStateService:
             repository_url="https://github.com/example/project/",
             job_description="Backend role",
         )
-        self.token: str | None = "secret-token"
+        self.token: str | None = self.__class__.default_token
         self.provider_api_key: str | None = None
         self.__class__.instances.append(self)
 
@@ -105,12 +107,14 @@ class FakeStateService:
 
 class FakeRepositoryService:
     fail_with_message: str | None = None
+    validated_tokens: list[str | None] = []
 
     async def validate_access(
         self, repo_url: str, github_token: str | None = None
     ) -> dict[str, Any]:
         assert repo_url == "https://github.com/example/project/"
-        assert github_token in {"secret-token", None}
+        assert github_token in {"secret-token", "server-token", None}
+        self.__class__.validated_tokens.append(github_token)
         if self.fail_with_message is not None:
             raise RuntimeError(self.fail_with_message)
         return {"success": True}
@@ -118,6 +122,8 @@ class FakeRepositoryService:
 
 class FakeCheckoutService:
     instances: list["FakeCheckoutService"] = []
+    checkout_tokens: list[str | None] = []
+    fail_cleanup = False
 
     def __init__(self) -> None:
         self.checkout_result = FakeCheckout(local_path=Path("D:/tmp/fake-checkout"))
@@ -126,10 +132,13 @@ class FakeCheckoutService:
 
     async def checkout(self, repo_url: str, github_token: str | None = None) -> FakeCheckout:
         assert repo_url == "https://github.com/example/project/"
-        assert github_token in {"secret-token", None}
+        assert github_token in {"secret-token", "server-token", None}
+        self.__class__.checkout_tokens.append(github_token)
         return self.checkout_result
 
     def cleanup_checkout(self, checkout: FakeCheckout) -> None:
+        if self.__class__.fail_cleanup:
+            raise RuntimeError("cleanup failed with secret-token")
         self.cleaned.append(checkout)
 
 
@@ -160,10 +169,15 @@ class FakeResumeGenerationService:
         model_mode: str | None = None,
     ) -> ResumeDraft:
         assert '"full_name": "example/project"' in repo_context
-        assert '"strategy": "unit-test"' in repo_context
+        assert (
+            '"strategy": "unit-test"' in repo_context
+            or "Evidence brief: FastAPI in src/app.py:1-2" in repo_context
+            or '"contribution_scope"' in repo_context
+        )
         assert job_description == "Backend role"
         self.calls.append(
             {
+                "repo_context": repo_context,
                 "model": model,
                 "provider_api_key": provider_api_key,
                 "model_mode": model_mode,
@@ -180,6 +194,41 @@ class FakeResumeGenerationService:
 class FakeLiteLLMResumeClient:
     def __init__(self, settings: object) -> None:
         self.settings = settings
+
+
+class FakeRepositoryInvestigationService:
+    calls: list[dict[str, Any]] = []
+    fail = False
+
+    async def investigate(self, **kwargs: Any) -> object:
+        self.__class__.calls.append(kwargs)
+        if self.__class__.fail:
+            raise RuntimeError("investigation failed with sensitive repository content")
+        return SimpleNamespace(
+            to_prompt_context=lambda: "Evidence brief: FastAPI in src/app.py:1-2"
+        )
+
+
+class FakeContributionAnalysis:
+    touched_files = ["src/app.py"]
+
+    def to_prompt_context(self) -> str:
+        return "git standup Jaydeep Solanki -d 300\n- src/app.py"
+
+
+class FakeEmptyContributionAnalysis:
+    touched_files: list[str] = []
+
+    def to_prompt_context(self) -> str:
+        return "git standup Jaydeep Solanki -d 300\nNo matching author-touched files were found."
+
+
+class FakeContributionAnalysisService:
+    calls: list[dict[str, Any]] = []
+
+    def analyze(self, repo_root: Path, **kwargs: Any) -> FakeContributionAnalysis:
+        self.__class__.calls.append({"repo_root": repo_root, **kwargs})
+        return FakeContributionAnalysis()
 
 
 class FakeSecret:
@@ -205,14 +254,27 @@ def patch_worker_dependencies(monkeypatch: pytest.MonkeyPatch) -> Any:
     from gitresume.workers import generation_tasks
 
     FakeStateService.instances.clear()
+    FakeStateService.default_token = "secret-token"
     FakeCheckoutService.instances.clear()
+    FakeCheckoutService.checkout_tokens.clear()
+    FakeCheckoutService.fail_cleanup = False
     FakeRepositoryService.fail_with_message = None
+    FakeRepositoryService.validated_tokens.clear()
     FakeResumeGenerationService.calls.clear()
+    FakeRepositoryInvestigationService.calls.clear()
+    FakeRepositoryInvestigationService.fail = False
+    FakeContributionAnalysisService.calls.clear()
     monkeypatch.setattr(generation_tasks, "Redis", FakeRedis)
     monkeypatch.setattr(generation_tasks, "RedisGenerationStateService", FakeStateService)
     monkeypatch.setattr(generation_tasks, "GitHubRepositoryService", FakeRepositoryService)
     monkeypatch.setattr(generation_tasks, "RepositoryCheckoutService", FakeCheckoutService)
     monkeypatch.setattr(generation_tasks, "RepositoryIngestionService", FakeIngestionService)
+    monkeypatch.setattr(
+        generation_tasks, "RepositoryInvestigationService", FakeRepositoryInvestigationService
+    )
+    monkeypatch.setattr(
+        generation_tasks, "ContributionAnalysisService", FakeContributionAnalysisService
+    )
     monkeypatch.setattr(generation_tasks, "ResumeGenerationService", FakeResumeGenerationService)
     monkeypatch.setattr(generation_tasks, "LiteLLMResumeClient", FakeLiteLLMResumeClient)
     monkeypatch.setattr(
@@ -222,6 +284,11 @@ def patch_worker_dependencies(monkeypatch: pytest.MonkeyPatch) -> Any:
             redis_url="redis://unit-test",
             ai_model="gemini/gemini-1.5-flash",
             settings_encryption_key=None,
+            github_token=None,
+            enable_guided_analysis=False,
+            guided_analysis_max_actions=4,
+            guided_analysis_max_chars_per_observation=500,
+            guided_analysis_max_observations=4,
         ),
     )
     return generation_tasks
@@ -268,6 +335,306 @@ async def test_run_generation_success_emits_stage_events_and_stores_result(
     assert state_service.token is None
     assert checkout_service.cleaned == [checkout_service.checkout_result]
     assert state_service.redis.closed is True
+
+
+@pytest.mark.asyncio
+async def test_run_generation_with_guided_analysis_uses_evidence_brief_context_and_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generation_tasks = patch_worker_dependencies(monkeypatch)
+    monkeypatch.setattr(
+        generation_tasks,
+        "get_settings",
+        lambda: SimpleNamespace(
+            redis_url="redis://unit-test",
+            ai_model="openai/gpt-4o-mini",
+            settings_encryption_key=None,
+            github_token=None,
+            enable_guided_analysis=True,
+            guided_analysis_max_actions=7,
+            guided_analysis_max_chars_per_observation=123,
+            guided_analysis_max_observations=3,
+        ),
+    )
+
+    await generation_tasks.run_generation.original_func("gen-guided")
+
+    state_service = FakeStateService.instances[-1]
+    assert [event["message"] for event in state_service.events] == [
+        "Validating repository access",
+        "Cloning repository",
+        "Analyzing and packing repository context",
+        "Investigating repository evidence",
+        "Generating resume",
+        "Generation complete",
+    ]
+    assert (
+        "Evidence brief: FastAPI in src/app.py:1-2"
+        in FakeResumeGenerationService.calls[-1]["repo_context"]
+    )
+    assert '"strategy": "unit-test"' not in FakeResumeGenerationService.calls[-1]["repo_context"]
+    investigation_call = FakeRepositoryInvestigationService.calls[-1]
+    assert investigation_call["repo_root"] == Path("D:/tmp/fake-checkout")
+    assert investigation_call["model"] == "openai/gpt-4o-mini"
+    assert investigation_call["max_actions"] == 7
+    assert investigation_call["max_chars_per_observation"] == 123
+    assert investigation_call["max_observations"] == 3
+
+
+@pytest.mark.asyncio
+async def test_run_generation_guided_analysis_failure_falls_back_to_original_context(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    generation_tasks = patch_worker_dependencies(monkeypatch)
+    FakeRepositoryInvestigationService.fail = True
+    monkeypatch.setattr(
+        generation_tasks,
+        "get_settings",
+        lambda: SimpleNamespace(
+            redis_url="redis://unit-test",
+            ai_model="gemini/gemini-1.5-flash",
+            settings_encryption_key=None,
+            github_token=None,
+            enable_guided_analysis=True,
+            guided_analysis_max_actions=4,
+            guided_analysis_max_chars_per_observation=500,
+            guided_analysis_max_observations=4,
+        ),
+    )
+
+    await generation_tasks.run_generation.original_func("gen-guided-fallback")
+
+    state_service = FakeStateService.instances[-1]
+    assert state_service.result is not None
+    assert '"strategy": "unit-test"' in FakeResumeGenerationService.calls[-1]["repo_context"]
+    assert "Guided repository investigation failed" in caplog.text
+    assert "sensitive repository content" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_run_generation_guided_analysis_can_scope_to_author_contributions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generation_tasks = patch_worker_dependencies(monkeypatch)
+
+    class AuthorScopedStateService(FakeStateService):
+        async def get_generation(self, generation_id: str) -> GenerationState | None:
+            state = await super().get_generation(generation_id)
+            assert state is not None
+            return state.model_copy(
+                update={"analysis_author": "Jaydeep Solanki", "analysis_days": 300}
+            )
+
+    monkeypatch.setattr(generation_tasks, "RedisGenerationStateService", AuthorScopedStateService)
+    monkeypatch.setattr(
+        generation_tasks,
+        "get_settings",
+        lambda: SimpleNamespace(
+            redis_url="redis://unit-test",
+            ai_model="openai/gpt-4o-mini",
+            settings_encryption_key=None,
+            github_token=None,
+            enable_guided_analysis=True,
+            enable_contribution_analysis=True,
+            contribution_analysis_default_days=90,
+            contribution_analysis_max_commits=50,
+            contribution_analysis_max_files=100,
+            guided_analysis_max_actions=4,
+            guided_analysis_max_chars_per_observation=500,
+            guided_analysis_max_observations=4,
+        ),
+    )
+
+    await generation_tasks.run_generation.original_func("gen-author-scope")
+
+    assert FakeContributionAnalysisService.calls == [
+        {
+            "repo_root": Path("D:/tmp/fake-checkout"),
+            "author": "Jaydeep Solanki",
+            "days": 300,
+            "max_commits": 50,
+            "max_files": 100,
+        }
+    ]
+    investigation_call = FakeRepositoryInvestigationService.calls[-1]
+    assert investigation_call["allowed_paths"] == {"src/app.py"}
+    assert "git standup Jaydeep Solanki -d 300" in investigation_call["contribution_context"]
+    assert AuthorScopedStateService.instances[-1].events[3]["data"] == {
+        "stage": "guided-evidence-investigation",
+        "analysisAuthor": "Jaydeep Solanki",
+        "contributedFileCount": 1,
+    }
+
+
+@pytest.mark.asyncio
+async def test_run_generation_author_scope_empty_contributions_never_falls_back_to_full_context(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    generation_tasks = patch_worker_dependencies(monkeypatch)
+    FakeRepositoryInvestigationService.fail = True
+
+    class EmptyContributionAnalysisService(FakeContributionAnalysisService):
+        def analyze(self, repo_root: Path, **kwargs: Any) -> FakeEmptyContributionAnalysis:
+            self.__class__.calls.append({"repo_root": repo_root, **kwargs})
+            return FakeEmptyContributionAnalysis()
+
+    class AuthorScopedStateService(FakeStateService):
+        async def get_generation(self, generation_id: str) -> GenerationState | None:
+            state = await super().get_generation(generation_id)
+            assert state is not None
+            return state.model_copy(
+                update={"analysis_author": "Jaydeep Solanki", "analysis_days": 300}
+            )
+
+    monkeypatch.setattr(generation_tasks, "RedisGenerationStateService", AuthorScopedStateService)
+    monkeypatch.setattr(
+        generation_tasks, "ContributionAnalysisService", EmptyContributionAnalysisService
+    )
+    monkeypatch.setattr(
+        generation_tasks,
+        "get_settings",
+        lambda: SimpleNamespace(
+            redis_url="redis://unit-test",
+            ai_model="openai/gpt-4o-mini",
+            settings_encryption_key=None,
+            github_token=None,
+            enable_guided_analysis=True,
+            enable_contribution_analysis=True,
+            contribution_analysis_default_days=90,
+            contribution_analysis_max_commits=50,
+            contribution_analysis_max_files=100,
+            guided_analysis_max_actions=4,
+            guided_analysis_max_chars_per_observation=500,
+            guided_analysis_max_observations=4,
+        ),
+    )
+
+    await generation_tasks.run_generation.original_func("gen-author-empty-fallback")
+
+    repo_context = FakeResumeGenerationService.calls[-1]["repo_context"]
+    assert '"strategy": "unit-test"' not in repo_context
+    assert "git standup Jaydeep Solanki -d 300" in repo_context
+    assert "No matching author-touched files were found." in repo_context
+    investigation_call = FakeRepositoryInvestigationService.calls[-1]
+    assert investigation_call["allowed_paths"] == set()
+    assert '"strategy": "unit-test"' not in str(investigation_call["initial_context"])
+    assert "Guided repository investigation failed" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_run_generation_uses_server_github_token_when_generation_token_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generation_tasks = patch_worker_dependencies(monkeypatch)
+    FakeStateService.default_token = None
+    monkeypatch.setattr(
+        generation_tasks,
+        "get_settings",
+        lambda: SimpleNamespace(
+            redis_url="redis://unit-test",
+            app_mode="self_hosted",
+            ai_model="gemini/gemini-1.5-flash",
+            settings_encryption_key=None,
+            github_token=FakeSecret("server-token"),
+            enable_guided_analysis=False,
+        ),
+    )
+
+    await generation_tasks.run_generation.original_func("gen-server-token")
+
+    assert FakeRepositoryService.validated_tokens == ["server-token"]
+    assert FakeCheckoutService.checkout_tokens == ["server-token"]
+    assert FakeStateService.instances[-1].token is None
+
+
+@pytest.mark.asyncio
+async def test_run_generation_hosted_mode_does_not_use_server_github_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generation_tasks = patch_worker_dependencies(monkeypatch)
+    FakeStateService.default_token = None
+    monkeypatch.setattr(
+        generation_tasks,
+        "get_settings",
+        lambda: SimpleNamespace(
+            redis_url="redis://unit-test",
+            app_mode="hosted",
+            ai_model="gemini/gemini-1.5-flash",
+            settings_encryption_key=None,
+            github_token=FakeSecret("server-token"),
+            enable_guided_analysis=False,
+        ),
+    )
+
+    await generation_tasks.run_generation.original_func("gen-hosted-no-server-token")
+
+    assert FakeRepositoryService.validated_tokens == [None]
+    assert FakeCheckoutService.checkout_tokens == [None]
+    assert FakeStateService.instances[-1].token is None
+
+
+@pytest.mark.asyncio
+async def test_run_generation_accepts_plain_string_github_token_from_real_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generation_tasks = patch_worker_dependencies(monkeypatch)
+    FakeStateService.default_token = None
+    monkeypatch.setattr(
+        generation_tasks,
+        "get_settings",
+        lambda: Settings(
+            environment="test",
+            session_secret_key="test-secret",
+            redis_url="redis://unit-test",
+            github_token="server-token",
+        ),
+    )
+
+    await generation_tasks.run_generation.original_func("gen-real-settings-token")
+
+    assert FakeRepositoryService.validated_tokens == ["server-token"]
+    assert FakeCheckoutService.checkout_tokens == ["server-token"]
+
+
+@pytest.mark.asyncio
+async def test_run_generation_prefers_generation_token_over_server_github_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generation_tasks = patch_worker_dependencies(monkeypatch)
+    monkeypatch.setattr(
+        generation_tasks,
+        "get_settings",
+        lambda: SimpleNamespace(
+            redis_url="redis://unit-test",
+            ai_model="gemini/gemini-1.5-flash",
+            settings_encryption_key=None,
+            github_token=FakeSecret("server-token"),
+        ),
+    )
+
+    await generation_tasks.run_generation.original_func("gen-request-token")
+
+    assert FakeRepositoryService.validated_tokens == ["secret-token"]
+    assert FakeCheckoutService.checkout_tokens == ["secret-token"]
+    assert FakeStateService.instances[-1].token is None
+
+
+@pytest.mark.asyncio
+async def test_run_generation_closes_redis_when_checkout_cleanup_fails_and_redacts_log(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    generation_tasks = patch_worker_dependencies(monkeypatch)
+    FakeCheckoutService.fail_cleanup = True
+
+    await generation_tasks.run_generation.original_func("gen-cleanup-fails")
+
+    state_service = FakeStateService.instances[-1]
+    assert state_service.redis.closed is True
+    assert "Checkout cleanup failed" in caplog.text
+    assert "secret-token" not in caplog.text
 
 
 @pytest.mark.asyncio
@@ -530,6 +897,84 @@ async def test_run_generation_rotates_saved_key_for_selected_model_when_enabled(
         }
     ]
     assert FakeResumeGenerationService.calls[-1]["provider_api_key"] == "sk-rotated"
+
+
+@pytest.mark.asyncio
+async def test_run_generation_uses_hosted_owner_scope_for_implicit_saved_key_rotation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generation_tasks = patch_worker_dependencies(monkeypatch)
+
+    class HostedStateService(FakeStateService):
+        async def get_generation(self, generation_id: str) -> GenerationState | None:
+            state = await super().get_generation(generation_id)
+            assert state is not None
+            return state.model_copy(
+                update={
+                    "model": "openai/gpt-4o-mini",
+                    "owner_scope": "user:12345",
+                    "provider_key_scope": None,
+                    "provider_key_id": None,
+                }
+            )
+
+    class FakeSelectedKey:
+        secret = FakeSecret("sk-hosted")
+
+    class FakeSelector:
+        calls: list[dict[str, str | None]] = []
+
+        def __init__(self, redis: object, settings_store: object) -> None:
+            self.redis = redis
+            self.settings_store = settings_store
+
+        async def select(
+            self,
+            *,
+            scope: str,
+            provider: str,
+            model: str | None = None,
+            provider_key_id: str | None = None,
+        ) -> FakeSelectedKey:
+            self.calls.append(
+                {
+                    "scope": scope,
+                    "provider": provider,
+                    "model": model,
+                    "provider_key_id": provider_key_id,
+                }
+            )
+            return FakeSelectedKey()
+
+    monkeypatch.setattr(generation_tasks, "RedisGenerationStateService", HostedStateService)
+    monkeypatch.setattr(generation_tasks, "StringEncryptor", FakeStringEncryptor)
+    monkeypatch.setattr(generation_tasks, "RedisSettingsStore", FakeSettingsStore)
+    monkeypatch.setattr(generation_tasks, "RedisProviderKeySelector", FakeSelector)
+    monkeypatch.setattr(generation_tasks, "provider_for_model", lambda model: "openai")
+    monkeypatch.setattr(
+        generation_tasks,
+        "get_settings",
+        lambda: SimpleNamespace(
+            redis_url="redis://unit-test",
+            app_mode="hosted",
+            ai_model="gemini/gemini-1.5-flash",
+            settings_encryption_key=FakeSecret("settings encryption passphrase"),
+            allow_saved_byok=True,
+            github_token=None,
+        ),
+    )
+
+    await generation_tasks.run_generation.original_func("gen-hosted-model")
+
+    assert FakeSelector.calls == [
+        {
+            "scope": "user:12345",
+            "provider": "openai",
+            "model": "openai/gpt-4o-mini",
+            "provider_key_id": None,
+        }
+    ]
+    assert FakeResumeGenerationService.calls[-1]["provider_api_key"] == "sk-hosted"
 
 
 @pytest.mark.asyncio

@@ -20,10 +20,15 @@ export function ProgressTimeline({ events, isStreaming, failedMessage }: Props) 
   const latestByType = new Map<GenerationStatus, GenerationEvent>(
     events.map((event) => [event.eventType === "completed" ? "succeeded" : event.eventType, event]),
   );
+  const latestEvent = events.at(-1);
+  const liveMessage = failedMessage ?? latestEvent?.message ?? (isStreaming ? "Generation is starting." : "No generation is running.");
 
   return (
     <section className="console-card timeline-panel" aria-label="Generation progress">
       <div className="section-kicker">Live trace</div>
+      <p className="sr-only" role="status" aria-live="polite" aria-label="Generation progress updates">
+        {liveMessage}
+      </p>
       <div className="timeline-grid">
         {steps.map((step) => {
           const event = latestByType.get(step.status);

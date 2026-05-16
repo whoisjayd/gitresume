@@ -21,9 +21,11 @@ Thanks for helping make GitResume easier to self-host and improve. This project 
 
    ```bash
    cp .env.example .env
-   # Host-run API/worker processes need localhost; Docker Compose uses redis.
-   python -c "from pathlib import Path; p=Path('.env'); p.write_text(p.read_text().replace('REDIS_URL=redis://redis:6379/0','REDIS_URL=redis://localhost:6379/0'))"
+   # Local uvicorn/worker processes should run in development mode and use host Redis.
+   python -c "from pathlib import Path; p=Path('.env'); s=p.read_text(); s=s.replace('ENVIRONMENT=production','ENVIRONMENT=development'); s=s.replace('REDIS_URL=redis://redis:6379/0','REDIS_URL=redis://localhost:6379/0'); p.write_text(s)"
    ```
+
+   `.env.example` defaults to `ENVIRONMENT=production` for Docker-like deployments. If you do not switch local host-run development to `ENVIRONMENT=development`, startup rejects the placeholder `SESSION_SECRET_KEY`. Keep `REDIS_URL=redis://localhost:6379/0` for `uv run uvicorn` and the local Taskiq worker; Docker Compose uses `REDIS_URL=redis://redis:6379/0` inside the Compose network.
 
 5. Start Redis when running the API/worker locally:
 

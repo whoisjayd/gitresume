@@ -7,19 +7,46 @@ type Props = {
   models: ModelEntry[];
   selectedModel: string;
   providerKeys: ProviderKeyMetadata[];
-  onSubmit: (input: CreateGenerationInput) => Promise<void>;
+  guidedAnalysisEnabled: boolean;
+  contributionAnalysisEnabled: boolean;
+  contributionAnalysisDefaultDays: number;
+  onSubmit: (input: CreateGenerationInput) => Promise<boolean>;
   onSelectedModelChange: (model: string) => void;
 };
 
-export function GenerationForm({ isSubmitting, models, selectedModel, providerKeys, onSubmit, onSelectedModelChange }: Props) {
+export function GenerationForm({
+  isSubmitting,
+  models,
+  selectedModel,
+  providerKeys,
+  guidedAnalysisEnabled,
+  contributionAnalysisEnabled,
+  contributionAnalysisDefaultDays,
+  onSubmit,
+  onSelectedModelChange,
+}: Props) {
   const [repoUrl, setRepoUrl] = useState("");
   const [githubToken, setGithubToken] = useState("");
   const [providerApiKey, setProviderApiKey] = useState("");
   const [providerKeyId, setProviderKeyId] = useState("");
   const [jobDescription, setJobDescription] = useState("");
   const [showJobDescription, setShowJobDescription] = useState(false);
+  const [useAuthorScope, setUseAuthorScope] = useState(false);
+  const [analysisAuthor, setAnalysisAuthor] = useState("");
+  const [analysisDays, setAnalysisDays] = useState(String(contributionAnalysisDefaultDays));
   const availableModels = models.filter((model) => model.isAvailable);
-  const compatibleKeys = providerKeys.filter((key) => !selectedModel || !key.model || key.model === selectedModel);
+  const selectedModelProvider = models.find((model) => model.id === selectedModel)?.provider ?? null;
+  const compatibleKeys = providerKeys.filter((key) => {
+    if (selectedModelProvider && key.provider !== selectedModelProvider) {
+      return false;
+    }
+    return !selectedModel || !key.model || key.model === selectedModel;
+  });
+  const canUseAuthorScope = guidedAnalysisEnabled && contributionAnalysisEnabled;
+
+  useEffect(() => {
+    setAnalysisDays(String(contributionAnalysisDefaultDays));
+  }, [contributionAnalysisDefaultDays]);
 
   useEffect(() => {
     if (providerKeyId && !compatibleKeys.some((key) => key.id === providerKeyId)) {
@@ -39,6 +66,17 @@ export function GenerationForm({ isSubmitting, models, selectedModel, providerKe
           model: selectedModel || availableModels[0]?.id || null,
           providerKeyId: providerKeyId || null,
           providerApiKey: providerApiKey.trim() ? providerApiKey.trim() : null,
+          ...(canUseAuthorScope && useAuthorScope && analysisAuthor.trim()
+            ? {
+                analysisAuthor: analysisAuthor.trim(),
+                analysisDays: Number(analysisDays) || contributionAnalysisDefaultDays,
+              }
+            : {}),
+        }).then((created) => {
+          if (created) {
+            setGithubToken("");
+            setProviderApiKey("");
+          }
         });
       }}
     >
@@ -119,6 +157,42 @@ export function GenerationForm({ isSubmitting, models, selectedModel, providerKe
           ))}
         </select>
       </label>
+
+      {canUseAuthorScope ? (
+        <fieldset className="field">
+          <legend>Author contribution scope</legend>
+          <label className="inline-field">
+            <input
+              type="checkbox"
+              checked={useAuthorScope}
+              onChange={(event) => setUseAuthorScope(event.target.checked)}
+            />
+            <span>Author contribution scope</span>
+          </label>
+          <label className="field">
+            <span>Analysis author</span>
+            <input
+              type="text"
+              value={analysisAuthor}
+              onChange={(event) => setAnalysisAuthor(event.target.value)}
+              placeholder="Jaydeep Solanki or @github-login"
+              disabled={!useAuthorScope}
+            />
+          </label>
+          <label className="field">
+            <span>Analysis days</span>
+            <input
+              type="number"
+              min="1"
+              max="3650"
+              value={analysisDays}
+              onChange={(event) => setAnalysisDays(event.target.value)}
+              disabled={!useAuthorScope}
+            />
+          </label>
+          <small>Limit repository analysis to commits and files associated with one contributor.</small>
+        </fieldset>
+      ) : null}
 
       <button className="primary-action" type="submit" disabled={isSubmitting}>
         <Play size={18} aria-hidden="true" /> {isSubmitting ? "Generating..." : "Generate resume"}

@@ -218,17 +218,96 @@ def test_readme_docker_quickstart_sets_required_secret_before_compose() -> None:
 def test_local_development_docs_avoid_production_placeholder_secret_startup() -> None:
     readme = read_text("README.md")
     quickstart = read_text("docs/quickstart.mdx")
+    contributing = read_text("CONTRIBUTING.md")
 
     for content, heading in (
         (readme, "### Local development"),
         (quickstart, "## Local development"),
+        (contributing, "## Development Setup"),
     ):
         assert heading in content
         local_dev_section = content.split(heading, maxsplit=1)[1]
         assert "ENVIRONMENT=development" in local_dev_section
+        assert "REDIS_URL=redis://localhost:6379/0" in local_dev_section
         assert local_dev_section.index("ENVIRONMENT=development") < local_dev_section.index(
             "uv run uvicorn"
         )
+
+
+def test_operator_docs_include_generation_validation_and_analysis_examples() -> None:
+    readme = read_text("README.md")
+    dashboard = read_text("docs/dashboard.mdx")
+    security = read_text("docs/security.mdx")
+
+    examples = readme + dashboard
+    for token in (
+        "curl -G http://localhost:8080/api/repositories/validate",
+        "curl -X POST http://localhost:8080/api/repositories/validate",
+        '"repoUrl": "https://github.com/WhoIsJayD/gitresume"',
+        '"githubToken": "<github token>"',
+        "GitHub tokens must be sent in the POST body",
+        "curl -X POST http://localhost:8080/api/generations",
+        '"providerApiKey": "<ephemeral provider key>"',
+        '"providerKeyId": "<saved-key-id>"',
+        '"analysisAuthor": "octocat"',
+        '"analysisDays": 180',
+    ):
+        assert token in examples
+
+    for token in (
+        "classifying-packing",
+        "guided-evidence-investigation",
+        "RepositoryIngestionService",
+        "RepositoryInvestigationService",
+        "ContributionAnalysisService",
+        "Only make claims supported by files touched by the requested author",
+    ):
+        assert token in security
+
+
+def test_operator_docs_include_byok_oauth_openrouter_and_hosted_examples() -> None:
+    byok = read_text("docs/byok.mdx")
+    models = read_text("docs/models.mdx")
+    oauth = read_text("docs/oauth-providers.mdx")
+    hosted = read_text("docs/hosted.mdx")
+    deployment = read_text("docs/deployment.mdx")
+
+    for token in (
+        "RedisProviderKeySelector",
+        "round-robin",
+        "providerKeyId",
+        "model-restricted key",
+    ):
+        assert token in byok
+
+    for token in (
+        "openrouter/meta-llama/llama-3.1-8b-instruct:free",
+        "OPENROUTER_API_KEY",
+        "providerApiKey",
+        "providerKeyId",
+    ):
+        assert token in models
+
+    for token in (
+        "POST /api/oauth-providers/github_copilot/connect",
+        "accessToken",
+        "refreshToken",
+        "expiresAt",
+        "accountLabel",
+        "browser device-code flow is still not claimed",
+    ):
+        assert token in oauth
+
+    hosted_deployment = hosted + deployment
+    for token in (
+        "APP_MODE=hosted",
+        "ENVIRONMENT=production",
+        "FRONTEND_ORIGIN=https://gitresume.example.com",
+        "CALLBACK_URL=https://gitresume.example.com/api/session/callback",
+        "SESSION_COOKIE_HTTPS_ONLY=true",
+        "ALLOWED_HOSTS=gitresume.example.com",
+    ):
+        assert token in hosted_deployment
 
 
 def test_docs_describe_current_byok_hosted_and_oauth_model_constraints() -> None:

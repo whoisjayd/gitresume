@@ -11,6 +11,16 @@ GitResume supports two BYOK paths: ephemeral per-generation keys and opt-in save
 
 Each `POST /api/generations` request can include `providerApiKey` for ephemeral BYOK per generation. The API stores that secret one-time in Redis for the worker and does not include it in the Taskiq payload, SSE stream, generation state response, or retry state.
 
+```bash
+curl -X POST http://localhost:8080/api/generations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repoUrl": "https://github.com/WhoIsJayD/gitresume",
+    "model": "gemini/gemini-1.5-flash",
+    "providerApiKey": "<ephemeral provider key>"
+  }'
+```
+
 ## Saved provider keys
 
 Saved BYOK is disabled by default. Enable it with:
@@ -34,4 +44,20 @@ If saved BYOK is disabled, Redis is unavailable, or encryption is missing, `GET 
 
 ## Rotation and metadata
 
-Saved key metadata is returned to the dashboard, but encrypted secrets are never returned. When multiple compatible saved keys exist for a provider/model, the worker rotates them round-robin using Redis counters.
+Saved key metadata is returned to the dashboard, but encrypted secrets are never returned. Metadata includes id, provider, label, optional model restriction, timestamps, and active state.
+
+Use `providerKeyId` to force one saved key for a generation:
+
+```bash
+curl -X POST http://localhost:8080/api/generations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repoUrl": "https://github.com/WhoIsJayD/gitresume",
+    "model": "openrouter/meta-llama/llama-3.1-8b-instruct:free",
+    "providerKeyId": "<saved-key-id>"
+  }'
+```
+
+The worker uses `RedisProviderKeySelector` for saved-key selection. If `providerKeyId` is present, the selected key must be active and match the model provider; a model-restricted key must match the requested model exactly. If no key id is provided and saved BYOK is enabled, multiple compatible keys for the provider/model rotate round-robin through Redis counters. This lets operators add several OpenAI, Gemini, Groq, Anthropic, or OpenRouter keys and distribute compatible generation jobs without returning any secret to the browser.
+
+In hosted mode, saved keys are scoped to the authenticated GitHub user. In self-hosted mode, saved keys use the global dashboard scope.

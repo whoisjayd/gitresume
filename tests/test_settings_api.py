@@ -48,10 +48,32 @@ def test_get_settings_reports_disabled_saved_byok_when_encryption_key_missing() 
         "allowSavedByok": True,
         "savedKeysEnabled": False,
         "loginRequired": False,
+        "guidedAnalysisEnabled": False,
+        "contributionAnalysisEnabled": False,
+        "contributionAnalysisDefaultDays": 300,
         "defaultModel": None,
         "providerKeys": [],
         "disabledReason": "Saved BYOK is disabled by server configuration.",
     }
+
+
+def test_get_settings_reports_analysis_flags_when_saved_byok_enabled() -> None:
+    client = make_client(
+        allow_saved_byok=True,
+        settings_encryption_key=SETTINGS_KEY,
+        enable_guided_analysis=True,
+        enable_contribution_analysis=True,
+        contribution_analysis_default_days=180,
+    )
+
+    response = client.get("/api/settings")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["savedKeysEnabled"] is True
+    assert body["guidedAnalysisEnabled"] is True
+    assert body["contributionAnalysisEnabled"] is True
+    assert body["contributionAnalysisDefaultDays"] == 180
 
 
 def test_self_hosted_settings_provider_key_lifecycle_does_not_expose_secret() -> None:

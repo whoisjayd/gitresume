@@ -54,6 +54,18 @@
 
 * { box-sizing: border-box; }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 body {
   margin: 0;
   min-width: 320px;
@@ -236,6 +248,29 @@ h1 {
 }
 
 .field small { color: var(--muted); }
+
+fieldset.field {
+  border: 1px solid var(--line);
+  padding: 1rem;
+}
+
+fieldset.field legend {
+  padding: 0 0.35rem;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.inline-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+}
+
+.inline-field input[type="checkbox"] {
+  width: auto;
+  min-width: 1rem;
+}
 
 input, textarea, select {
   width: 100%;

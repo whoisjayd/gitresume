@@ -78,6 +78,27 @@ async def test_generation_state_service_persists_model_and_provider_key_id() -> 
 
 
 @pytest.mark.asyncio
+async def test_generation_state_service_persists_hidden_owner_scope() -> None:
+    redis = FakeRedis(decode_responses=True)
+    service = RedisGenerationStateService(redis)
+    request = GenerationCreateRequest(
+        repo_url="https://github.com/example/project",
+        model="openai/gpt-4o-mini",
+        owner_scope="user:12345",
+    )
+
+    await service.create_generation("gen-owned", request)
+
+    state = await service.get_generation("gen-owned")
+    raw = await redis.hgetall(service._state_key("gen-owned"))
+
+    assert state is not None
+    assert state.owner_scope == "user:12345"
+    assert raw["owner_scope"] == "user:12345"
+    assert "ownerScope" not in state.model_dump(by_alias=True)
+
+
+@pytest.mark.asyncio
 async def test_generation_state_service_replays_events_with_stream_ids_after_last_id() -> None:
     redis = FakeRedis(decode_responses=True)
     service = RedisGenerationStateService(redis)

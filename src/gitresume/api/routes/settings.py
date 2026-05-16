@@ -44,6 +44,11 @@ class DashboardSettingsResponse(BaseModel):
     allow_saved_byok: bool = Field(serialization_alias="allowSavedByok")
     saved_keys_enabled: bool = Field(serialization_alias="savedKeysEnabled")
     login_required: bool = Field(serialization_alias="loginRequired")
+    guided_analysis_enabled: bool = Field(serialization_alias="guidedAnalysisEnabled")
+    contribution_analysis_enabled: bool = Field(serialization_alias="contributionAnalysisEnabled")
+    contribution_analysis_default_days: int = Field(
+        serialization_alias="contributionAnalysisDefaultDays"
+    )
     default_model: str | None = Field(default=None, serialization_alias="defaultModel")
     provider_keys: list[ProviderKeyMetadataResponse] = Field(
         default_factory=list, serialization_alias="providerKeys"
@@ -240,6 +245,9 @@ def _disabled_response(
         allow_saved_byok=context.settings.allow_saved_byok,
         saved_keys_enabled=False,
         login_required=context.login_required,
+        guided_analysis_enabled=context.settings.enable_guided_analysis,
+        contribution_analysis_enabled=context.settings.enable_contribution_analysis,
+        contribution_analysis_default_days=context.settings.contribution_analysis_default_days,
         default_model=None,
         provider_keys=[],
         disabled_reason=reason or context.disabled_reason,
@@ -256,6 +264,9 @@ def _response_from_dashboard(
         allow_saved_byok=context.settings.allow_saved_byok,
         saved_keys_enabled=True,
         login_required=context.login_required,
+        guided_analysis_enabled=context.settings.enable_guided_analysis,
+        contribution_analysis_enabled=context.settings.enable_contribution_analysis,
+        contribution_analysis_default_days=context.settings.contribution_analysis_default_days,
         default_model=default_model,
         provider_keys=[ProviderKeyMetadataResponse.model_validate(key) for key in provider_keys],
     )

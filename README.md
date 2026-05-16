@@ -74,6 +74,65 @@ Key API routes:
 
 Read more in [Dashboard](docs/dashboard.mdx).
 
+## Generation and validation examples
+
+Validate a public repository with a query-string URL. Do not put GitHub tokens in this GET request; the API rejects `githubToken` and `github_token` query parameters.
+
+```bash
+curl -G http://localhost:8080/api/repositories/validate \
+  --data-urlencode "repo_url=https://github.com/WhoIsJayD/gitresume"
+```
+
+Validate a private repository or raise rate limits by sending the token in the POST body. GitHub tokens must be sent in the POST body, not query parameters.
+
+```bash
+curl -X POST http://localhost:8080/api/repositories/validate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repoUrl": "https://github.com/WhoIsJayD/gitresume",
+    "githubToken": "<github token>"
+  }'
+```
+
+Start a generation with an ephemeral provider key for that request only:
+
+```bash
+curl -X POST http://localhost:8080/api/generations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repoUrl": "https://github.com/WhoIsJayD/gitresume",
+    "jobDescription": "Backend platform engineer focused on FastAPI and async workers",
+    "model": "gemini/gemini-1.5-flash",
+    "providerApiKey": "<ephemeral provider key>"
+  }'
+```
+
+When saved BYOK is enabled, use `providerKeyId` with a compatible model instead of sending a raw provider key:
+
+```bash
+curl -X POST http://localhost:8080/api/generations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repoUrl": "https://github.com/WhoIsJayD/gitresume",
+    "model": "openrouter/meta-llama/llama-3.1-8b-instruct:free",
+    "providerKeyId": "<saved-key-id>"
+  }'
+```
+
+If guided contribution analysis is enabled by the operator, scope evidence to an author and time window:
+
+```bash
+curl -X POST http://localhost:8080/api/generations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repoUrl": "https://github.com/WhoIsJayD/gitresume",
+    "analysisAuthor": "octocat",
+    "analysisDays": 180
+  }'
+```
+
+The worker validates access, clones the repository, builds packed repository context, optionally investigates evidence with repository-bounded tools, selects a provider credential, calls LiteLLM, stores the result, and streams status at `/api/generations/{generation_id}/events`.
+
 ## BYOK
 
 GitResume supports two provider-key paths:

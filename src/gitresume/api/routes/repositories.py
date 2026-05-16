@@ -1,3 +1,5 @@
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, SecretStr
 
@@ -29,7 +31,7 @@ async def validate_repository(
             detail="GitHub tokens must be sent in the POST body, not query parameters.",
         )
     settings = request.app.state.settings
-    token = settings.github_token
+    token = _server_github_token(settings)
     return await _validate_repository(repo_url, token)
 
 
@@ -42,9 +44,18 @@ async def validate_repository_with_body(
     token = (
         body.github_token.get_secret_value()
         if body.github_token is not None
-        else settings.github_token
+        else _server_github_token(settings)
     )
     return await _validate_repository(body.repo_url, token)
+
+
+def _server_github_token(settings: object) -> str | None:
+    if getattr(settings, "app_mode", "self_hosted") != "self_hosted":
+        return None
+    configured_token: Any = getattr(settings, "github_token", None)
+    if hasattr(configured_token, "get_secret_value"):
+        return configured_token.get_secret_value()
+    return configured_token
 
 
 async def _validate_repository(

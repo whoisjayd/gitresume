@@ -76,15 +76,17 @@ export default function App() {
 
   const availableModelCount = useMemo(() => models.filter((model) => model.isAvailable).length, [models]);
 
-  async function submit(input: CreateGenerationInput) {
+  async function submit(input: CreateGenerationInput): Promise<boolean> {
     setIsSubmitting(true);
     setSubmitError(null);
     setLastInput(safeRetryInput(input));
 
     try {
       setGeneration(await createGeneration(input));
+      return true;
     } catch (reason) {
       setSubmitError(reason instanceof Error ? reason.message : "Could not start generation.");
+      return false;
     } finally {
       setIsSubmitting(false);
     }
@@ -111,7 +113,12 @@ export default function App() {
 
   async function updateDefaultModel(model: string | null) {
     setSelectedModel(model ?? "");
-    setDashboardSettings(await setDefaultModel(model));
+    try {
+      setSettingsError(null);
+      setDashboardSettings(await setDefaultModel(model));
+    } catch (reason) {
+      setSettingsError(reason instanceof Error ? reason.message : "Could not update default model.");
+    }
   }
 
   return (
@@ -158,6 +165,9 @@ export default function App() {
           models={models}
           selectedModel={selectedModel}
           providerKeys={dashboardSettings?.providerKeys ?? []}
+          guidedAnalysisEnabled={dashboardSettings?.guidedAnalysisEnabled ?? false}
+          contributionAnalysisEnabled={dashboardSettings?.contributionAnalysisEnabled ?? false}
+          contributionAnalysisDefaultDays={dashboardSettings?.contributionAnalysisDefaultDays ?? 300}
           onSelectedModelChange={setSelectedModel}
           onSubmit={submit}
         />
@@ -277,6 +287,9 @@ function OAuthProviderPanel({ providers, onRefresh }: {
   }
 
   async function disconnect(provider: string) {
+    if (!window.confirm(`Disconnect ${provider}? Saved OAuth credentials for this provider will be removed.`)) {
+      return;
+    }
     setBusyProvider(provider);
     setError(null);
     try {
@@ -290,6 +303,10 @@ function OAuthProviderPanel({ providers, onRefresh }: {
   }
 
   async function disconnectAccount(provider: string, accountId: string, busyKey: string) {
+    const label = providerStatusAccountLabel(providers, provider, accountId) ?? accountId;
+    if (!window.confirm(`Disconnect ${label}? This OAuth account credential will be removed.`)) {
+      return;
+    }
     setBusyProvider(busyKey);
     setError(null);
     try {
@@ -406,6 +423,12 @@ function OAuthProviderPanel({ providers, onRefresh }: {
   );
 }
 
+function providerStatusAccountLabel(providers: OAuthProviderStatus[], providerName: string, accountId: string): string | null {
+  const provider = providers.find((item) => item.provider === providerName);
+  const account = provider?.accounts?.find((item) => item.id === accountId);
+  return account?.accountLabel || null;
+}
+
 function SettingsPanel({ settings, models, session, selectedModel, onDefaultModelChange, onRefresh }: {
   settings: DashboardSettings | null;
   models: ModelEntry[];
@@ -419,27 +442,37 @@ function SettingsPanel({ settings, models, session, selectedModel, onDefaultMode
   const [secret, setSecret] = useState("");
   const [model, setModel] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const providers = Array.from(new Set([...models.map((entry) => entry.provider), "openai", "gemini", "anthropic", "groq"])).sort();
 
   async function submitKey(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
+    setError(null);
     try {
       await saveProviderKey({ provider, label: label.trim(), secret, model: model || null });
       setLabel("");
       setSecret("");
       setModel("");
       await onRefresh();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not save provider key.");
     } finally {
       setBusy(false);
     }
   }
 
-  async function removeKey(keyId: string) {
+  async function removeKey(keyId: string, keyLabel: string) {
+    if (!window.confirm(`Delete ${keyLabel}? This saved provider key cannot be recovered.`)) {
+      return;
+    }
     setBusy(true);
+    setError(null);
     try {
       await deleteProviderKey(keyId);
       await onRefresh();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not delete provider key.");
     } finally {
       setBusy(false);
     }
@@ -451,6 +484,7 @@ function SettingsPanel({ settings, models, session, selectedModel, onDefaultMode
       <h2 id="settings-title">{session?.appMode === "hosted" ? "Hosted BYOK settings" : "Self-hosted global settings"}</h2>
       {settings?.loginRequired ? <p className="notice">Hosted saved keys require GitHub login. Ephemeral keys remain available in the Generate form.</p> : null}
       {settings?.disabledReason ? <p className="notice">{settings.disabledReason}</p> : null}
+      {error ? <p className="notice" role="alert">{error}</p> : null}
 
       <label className="field">
         <span>Default model</span>
@@ -464,7 +498,7 @@ function SettingsPanel({ settings, models, session, selectedModel, onDefaultMode
         {(settings?.providerKeys ?? []).map((key) => (
           <article key={key.id}>
             <div><strong>{key.label}</strong><span>{key.provider}{key.model ? ` · ${key.model}` : ""}</span></div>
-            <button type="button" onClick={() => void removeKey(key.id)} disabled={busy} aria-label={`Delete ${key.label}`}>Delete</button>
+            <button type="button" onClick={() => void removeKey(key.id, key.label)} disabled={busy} aria-label={`Delete ${key.label}`}>Delete</button>
           </article>
         ))}
       </div>
@@ -498,10 +532,15 @@ function writeThemePreference(theme: Theme) {
 }
 
 function safeRetryInput(input: CreateGenerationInput): RetryGenerationInput {
-  return {
+  const retryInput: RetryGenerationInput = {
     repoUrl: input.repoUrl,
     jobDescription: input.jobDescription ?? null,
     model: input.model ?? null,
     providerKeyId: input.providerKeyId ?? null,
   };
+  if (input.analysisAuthor) {
+    retryInput.analysisAuthor = input.analysisAuthor;
+    retryInput.analysisDays = input.analysisDays ?? null;
+  }
+  return retryInput;
 }

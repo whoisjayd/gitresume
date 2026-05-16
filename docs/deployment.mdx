@@ -26,6 +26,25 @@ The repository includes Dockerfiles for the backend/worker runtime and the front
 - Optional `ALLOW_SAVED_BYOK` and `SETTINGS_ENCRYPTION_KEY`
 - Optional GitHub OAuth values for hosted mode or private repository access
 
+## Hosted production example
+
+For a hosted deployment behind `https://gitresume.example.com`, use production settings that match the public origin and GitHub OAuth callback:
+
+```env
+ENVIRONMENT=production
+APP_MODE=hosted
+FRONTEND_ORIGIN=https://gitresume.example.com
+CALLBACK_URL=https://gitresume.example.com/api/session/callback
+ALLOWED_HOSTS=gitresume.example.com
+SESSION_SECRET_KEY=<long random session secret>
+SESSION_COOKIE_HTTPS_ONLY=true
+REDIS_URL=redis://redis:6379/0
+GITHUB_CLIENT_ID=<github oauth client id>
+GITHUB_CLIENT_SECRET=<github oauth client secret>
+```
+
+Add `ALLOW_SAVED_BYOK=true` and `SETTINGS_ENCRYPTION_KEY=<fernet key or long passphrase>` when hosted users should manage encrypted saved provider keys or OAuth model-provider accounts.
+
 ## Verification
 
 Run targeted deployment checks before publishing images:

@@ -23,6 +23,67 @@ The React dashboard is the main GitResume interface. It exposes generation contr
 
 Related model-provider OAuth endpoints are documented in [OAuth providers](oauth-providers.mdx).
 
+## Repository validation examples
+
+Use GET validation for public repositories. The GET route rejects `githubToken` and `github_token` query parameters; GitHub tokens must be sent in the POST body.
+
+```bash
+curl -G http://localhost:8080/api/repositories/validate \
+  --data-urlencode "repo_url=https://github.com/WhoIsJayD/gitresume"
+```
+
+Use POST validation when a private repository or higher GitHub rate limit needs a token:
+
+```bash
+curl -X POST http://localhost:8080/api/repositories/validate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repoUrl": "https://github.com/WhoIsJayD/gitresume",
+    "githubToken": "<github token>"
+  }'
+```
+
+## Generation request examples
+
+Start a generation with a one-time provider key:
+
+```bash
+curl -X POST http://localhost:8080/api/generations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repoUrl": "https://github.com/WhoIsJayD/gitresume",
+    "jobDescription": "Backend platform engineer focused on FastAPI and async workers",
+    "model": "gemini/gemini-1.5-flash",
+    "providerApiKey": "<ephemeral provider key>"
+  }'
+```
+
+Start a generation with an encrypted saved key selected by id:
+
+```bash
+curl -X POST http://localhost:8080/api/generations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repoUrl": "https://github.com/WhoIsJayD/gitresume",
+    "model": "openrouter/meta-llama/llama-3.1-8b-instruct:free",
+    "providerKeyId": "<saved-key-id>"
+  }'
+```
+
+When `ENABLE_GUIDED_ANALYSIS=true` and `ENABLE_CONTRIBUTION_ANALYSIS=true`, narrow the generation evidence to a requested author and recent history window:
+
+```bash
+curl -X POST http://localhost:8080/api/generations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repoUrl": "https://github.com/WhoIsJayD/gitresume",
+    "analysisAuthor": "octocat",
+    "analysisDays": 180
+  }'
+```
+
+The response includes `generationId`, `statusUrl`, `eventsUrl`, and `redirectPath`. The dashboard then reads `GET /api/generations/{generation_id}` and streams `GET /api/generations/{generation_id}/events`.
+
 ## Navigation
 
 The frontend includes links to `/docs` and `https://github.com/WhoIsJayD/gitresume`.

@@ -60,6 +60,8 @@ export type CreateGenerationInput = {
   model?: string | null;
   providerKeyId?: string | null;
   providerApiKey?: string | null;
+  analysisAuthor?: string | null;
+  analysisDays?: number | null;
 };
 
 export type SessionInfo = {
@@ -98,6 +100,9 @@ export type DashboardSettings = {
   allowSavedByok: boolean;
   savedKeysEnabled: boolean;
   loginRequired: boolean;
+  guidedAnalysisEnabled: boolean;
+  contributionAnalysisEnabled: boolean;
+  contributionAnalysisDefaultDays: number;
   defaultModel?: string | null;
   providerKeys: ProviderKeyMetadata[];
   disabledReason?: string | null;
@@ -131,11 +136,57 @@ export type OAuthProviderStatus = {
 
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(body || `Request failed with ${response.status}`);
+    throw new Error(await readErrorMessage(response));
   }
 
   return response.json() as Promise<T>;
+}
+
+async function readErrorMessage(response: Response): Promise<string> {
+  const body = await response.text();
+  if (!body) {
+    return `Request failed with ${response.status}`;
+  }
+
+  try {
+    const parsed = JSON.parse(body) as unknown;
+    const detail = typeof parsed === "object" && parsed !== null && "detail" in parsed
+      ? (parsed as { detail?: unknown }).detail
+      : parsed;
+    const message = detailMessage(detail);
+    if (message) {
+      return message;
+    }
+  } catch {
+    // Fall through to the raw body for non-JSON API errors.
+  }
+
+  return body;
+}
+
+function detailMessage(detail: unknown): string | null {
+  if (typeof detail === "string") {
+    return detail;
+  }
+
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (typeof item === "object" && item !== null && "msg" in item) {
+          return String((item as { msg?: unknown }).msg ?? "");
+        }
+        return "";
+      })
+      .filter(Boolean);
+    return messages.length > 0 ? messages.join(" ") : null;
+  }
+
+  if (typeof detail === "object" && detail !== null && "msg" in detail) {
+    return String((detail as { msg?: unknown }).msg ?? "") || null;
+  }
+
+  return null;
 }
 
 export async function createGeneration(input: CreateGenerationInput): Promise<CreateGenerationResponse> {
@@ -193,16 +244,14 @@ export async function updateOAuthProviderAccount(input: { provider: string; acco
 export async function disconnectOAuthProviderAccount(provider: string, accountId: string): Promise<void> {
   const response = await fetch(`/api/oauth-providers/${provider}/accounts/${accountId}`, { method: "DELETE" });
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(body || `Request failed with ${response.status}`);
+    throw new Error(await readErrorMessage(response));
   }
 }
 
 export async function disconnectOAuthProvider(provider: string): Promise<void> {
   const response = await fetch(`/api/oauth-providers/${provider}`, { method: "DELETE" });
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(body || `Request failed with ${response.status}`);
+    throw new Error(await readErrorMessage(response));
   }
 }
 
@@ -217,8 +266,7 @@ export async function saveProviderKey(input: { provider: string; label: string; 
 export async function deleteProviderKey(keyId: string): Promise<void> {
   const response = await fetch(`/api/settings/provider-keys/${keyId}`, { method: "DELETE" });
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(body || `Request failed with ${response.status}`);
+    throw new Error(await readErrorMessage(response));
   }
 }
 

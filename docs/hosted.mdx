@@ -30,6 +30,26 @@ CALLBACK_URL=http://localhost:5173/api/session/callback
 
 The hosted URL is deployment-specific. It can be wired to the same FastAPI + Vite app and should use the deployment's public origin and callback URL.
 
+Production hosted example for a single public origin:
+
+```env
+ENVIRONMENT=production
+APP_MODE=hosted
+FRONTEND_ORIGIN=https://gitresume.example.com
+CALLBACK_URL=https://gitresume.example.com/api/session/callback
+ALLOWED_HOSTS=gitresume.example.com
+SESSION_SECRET_KEY=<long random session secret>
+SESSION_COOKIE_HTTPS_ONLY=true
+SESSION_COOKIE_SAME_SITE=lax
+REDIS_URL=redis://redis:6379/0
+GITHUB_CLIENT_ID=<github oauth client id>
+GITHUB_CLIENT_SECRET=<github oauth client secret>
+ALLOW_SAVED_BYOK=true
+SETTINGS_ENCRYPTION_KEY=<fernet key or long passphrase>
+```
+
+In hosted mode, `POST /api/generations` requires an authenticated GitHub session. Anonymous users can inspect the app shell, but generation ownership, saved BYOK, and OAuth model-provider accounts are scoped to `user:<github_user_id>`.
+
 ## Saved BYOK scope
 
 In hosted mode, hosted saved keys require GitHub login and are scoped to the authenticated GitHub user id. `GET /api/settings` reports `loginRequired` when an anonymous hosted user tries to manage saved keys, and requests that attempt to use saved provider keys without login receive a login-required response.

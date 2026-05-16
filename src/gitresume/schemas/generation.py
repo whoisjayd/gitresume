@@ -53,6 +53,22 @@ class GenerationCreateRequest(BaseModel):
         repr=False,
     )
     model: str | None = Field(default=None, validation_alias="model", serialization_alias="model")
+    analysis_author: str | None = Field(
+        default=None,
+        validation_alias="analysisAuthor",
+        serialization_alias="analysisAuthor",
+        max_length=200,
+        exclude=True,
+        repr=False,
+    )
+    analysis_days: int | None = Field(
+        default=None,
+        validation_alias="analysisDays",
+        serialization_alias="analysisDays",
+        ge=1,
+        le=3650,
+        exclude=True,
+    )
     provider_key_id: str | None = Field(
         default=None,
         validation_alias="providerKeyId",
@@ -60,6 +76,7 @@ class GenerationCreateRequest(BaseModel):
     )
     provider_key_scope: str | None = Field(default=None, exclude=True, repr=False)
     oauth_provider_scope: str | None = Field(default=None, exclude=True, repr=False)
+    owner_scope: str | None = Field(default=None, exclude=True, repr=False)
 
     @field_validator("repo_url")
     @classmethod
@@ -69,6 +86,16 @@ class GenerationCreateRequest(BaseModel):
             normalized = normalized.removesuffix(".git")
         reference = parse_github_repository_url(normalized)
         return f"{reference.canonical_url}/"
+
+    @field_validator("analysis_author")
+    @classmethod
+    def normalize_analysis_author(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().lstrip("@")
+        if not normalized or "\x00" in normalized:
+            raise ValueError("analysis author must be non-empty and must not contain NUL bytes")
+        return normalized
 
 
 class GenerationCreateResponse(BaseModel):
@@ -97,6 +124,8 @@ class GenerationState(BaseModel):
     error: str | None = None
     task_id: str | None = Field(default=None, serialization_alias="taskId")
     model: str | None = Field(default=None, serialization_alias="model")
+    analysis_author: str | None = Field(default=None, exclude=True)
+    analysis_days: int | None = Field(default=None, exclude=True)
     provider_key_id: str | None = Field(
         default=None,
         serialization_alias="providerKeyId",
@@ -104,5 +133,6 @@ class GenerationState(BaseModel):
     )
     provider_key_scope: str | None = Field(default=None, exclude=True)
     oauth_provider_scope: str | None = Field(default=None, exclude=True)
+    owner_scope: str | None = Field(default=None, exclude=True)
     created_at: datetime = Field(default_factory=utc_now, serialization_alias="createdAt")
     updated_at: datetime = Field(default_factory=utc_now, serialization_alias="updatedAt")

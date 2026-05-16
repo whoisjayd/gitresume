@@ -32,3 +32,18 @@ Worker code emits generic public failure messages and safe logs. Secrets are not
 ## Repository access
 
 Private clone operations use safe token handoff and avoid embedding tokens in git command arguments. Repository processing limits are controlled by `MAX_REPO_SIZE_MB` and `MAX_REPO_FILES`.
+
+## Repository analysis pipeline
+
+Generation jobs follow the worker pipeline in `gitresume.workers.generation_tasks`:
+
+1. Validate repository access with `GitHubRepositoryService.validate_access`.
+2. Clone into a temporary checkout with `RepositoryCheckoutService`.
+3. Emit the `classifying-packing` analysis event and build packed context with `RepositoryIngestionService`.
+4. Select credentials in this order: one-time `providerApiKey`, OAuth account token for OAuth models, compatible saved BYOK through `RedisProviderKeySelector`, then server environment provider keys handled by LiteLLM.
+5. If `ENABLE_GUIDED_ANALYSIS=true`, emit `guided-evidence-investigation` and let `RepositoryInvestigationService` use repository-bounded tools: traversal, glob, read, and fixed-string search. The tools reject paths that escape the checkout root.
+6. Generate the resume with `ResumeGenerationService` and store the final state in Redis.
+
+## Guided contribution scope
+
+Author-scoped evidence requires both `ENABLE_GUIDED_ANALYSIS=true` and `ENABLE_CONTRIBUTION_ANALYSIS=true`. A request can include `analysisAuthor` and `analysisDays`; if `analysisDays` is omitted, `CONTRIBUTION_ANALYSIS_DEFAULT_DAYS` is used. `ContributionAnalysisService` finds commits and touched files for the requested author/time window, then the investigation tools are restricted to those files. The prompt policy says: `Only make claims supported by files touched by the requested author.`

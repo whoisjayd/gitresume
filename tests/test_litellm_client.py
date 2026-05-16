@@ -188,3 +188,51 @@ async def test_litellm_client_rejects_malformed_responses_payload(monkeypatch) -
             model="chatgpt/codex-mini-latest",
             model_mode="responses",
         )
+
+
+@pytest.mark.asyncio
+async def test_litellm_client_generate_json_extracts_markdown_fenced_json(monkeypatch) -> None:
+    from gitresume.ai import litellm_client
+
+    async def fake_acompletion(**kwargs):
+        assert kwargs["response_format"] == {"type": "json_object"}
+        content = (
+            'Here is the plan:\n```json\n{"actions": [{"type": "glob", "pattern": "**/*.py"}]}\n```'
+        )
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
+
+    monkeypatch.setattr(litellm_client, "acompletion", fake_acompletion)
+    client = litellm_client.LiteLLMResumeClient(Settings(environment="test"))
+
+    result = await client.generate_json([{"role": "user", "content": "plan"}])
+
+    assert result == {"actions": [{"type": "glob", "pattern": "**/*.py"}]}
+
+
+@pytest.mark.asyncio
+async def test_litellm_client_generate_resume_extracts_prefixed_fenced_json(monkeypatch) -> None:
+    from gitresume.ai import litellm_client
+
+    async def fake_acompletion(**kwargs):
+        del kwargs
+        payload = {
+            "project_title": "Fenced Project",
+            "tech_stack": ["Python"],
+            "bullet_points": ["Built API", "Added tests", "Shipped worker"],
+        }
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content=f"Sure, here is JSON:\n```json\n{json.dumps(payload)}\n```"
+                    )
+                )
+            ]
+        )
+
+    monkeypatch.setattr(litellm_client, "acompletion", fake_acompletion)
+    client = litellm_client.LiteLLMResumeClient(Settings(environment="test"))
+
+    result = await client.generate_resume([{"role": "user", "content": "resume"}])
+
+    assert result.project_title == "Fenced Project"

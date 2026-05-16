@@ -15,6 +15,33 @@ Available chat and completion models can be selected in the dashboard and sent w
 
 GitResume includes explicit OpenRouter `:free` fallback entries even when LiteLLM metadata is unavailable, so self-hosted and hosted operators can select free-tier OpenRouter chat models from the dashboard. These entries use normal API-key authentication (`authType: "api_key"`), require an `OPENROUTER_API_KEY` or saved/ephemeral OpenRouter provider key, and stay visible as models such as `openrouter/meta-llama/llama-3.1-8b-instruct:free`. OpenRouter controls the final free-model availability, rate limits, and routing behavior.
 
+Server-owned OpenRouter use:
+
+```env
+AI_MODEL=openrouter/meta-llama/llama-3.1-8b-instruct:free
+OPENROUTER_API_KEY=<openrouter key>
+```
+
+Per-request OpenRouter use with an ephemeral key:
+
+```json
+{
+  "repoUrl": "https://github.com/WhoIsJayD/gitresume",
+  "model": "openrouter/meta-llama/llama-3.1-8b-instruct:free",
+  "providerApiKey": "<ephemeral OpenRouter key>"
+}
+```
+
+Saved OpenRouter key use:
+
+```json
+{
+  "repoUrl": "https://github.com/WhoIsJayD/gitresume",
+  "model": "openrouter/meta-llama/llama-3.1-8b-instruct:free",
+  "providerKeyId": "<saved-key-id>"
+}
+```
+
 ## Responses models
 
 LiteLLM entries with `responses` mode are listed for visibility. API-key responses entries remain unavailable unless a supported execution path is added. OAuth responses entries can become selectable only after their provider is connected and the installed LiteLLM package exposes the async Responses API used by the worker.

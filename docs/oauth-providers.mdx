@@ -27,6 +27,32 @@ The OAuth app must provide `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, and `CALL
 
 `POST /api/oauth-providers/{provider}/connect` accepts a manually supplied OAuth access token, optional refresh token, optional expiry, and optional account label. Each call adds an OAuth account for the provider instead of replacing existing accounts. Access and refresh tokens are encrypted in Redis using `SETTINGS_ENCRYPTION_KEY`; they are not stored in Starlette signed cookies and are never returned by API responses, SSE events, generation state, or retry state.
 
+Manual GitHub Copilot account connection example:
+
+The route is `POST /api/oauth-providers/github_copilot/connect`.
+
+```bash
+curl -X POST http://localhost:8080/api/oauth-providers/github_copilot/connect \
+  -H "Content-Type: application/json" \
+  -d '{
+    "accessToken": "<oauth access token>",
+    "refreshToken": "<optional refresh token>",
+    "expiresAt": "2026-06-01T00:00:00Z",
+    "accountLabel": "primary copilot account"
+  }'
+```
+
+Manual ChatGPT/Codex account connection uses the same body shape with `chatgpt` in the provider path:
+
+```bash
+curl -X POST http://localhost:8080/api/oauth-providers/chatgpt/connect \
+  -H "Content-Type: application/json" \
+  -d '{
+    "accessToken": "<oauth access token>",
+    "accountLabel": "codex account"
+  }'
+```
+
 `GET /api/oauth-providers` returns provider-level `connected`/`executable` status plus account metadata such as `id`, `accountLabel`, `createdAt`, `expiresAt`, `lastRefreshedAt`, `lastUsedAt`, `isActive`, and `executable`. Secrets are not included. `DELETE /api/oauth-providers/{provider}/accounts/{account_id}` removes one account, while `DELETE /api/oauth-providers/{provider}` remains available to disconnect all accounts for a provider. `PUT /api/oauth-providers/{provider}/accounts/{account_id}` lets operators manually replace/refresh an account access token and optionally update the encrypted refresh token and expiry.
 
 Hosted mode scopes provider credentials to the authenticated GitHub user. Self-hosted mode stores them in the global dashboard scope.
