@@ -249,6 +249,11 @@ function OAuthProviderPanel({ providers, onRefresh }: {
       setJobs((current) => ({ ...current, [provider]: job }));
       if (job.status === "succeeded") {
         await onRefresh();
+        setJobs((current) => {
+          const next = { ...current };
+          delete next[provider];
+          return next;
+        });
       }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not start OAuth login.");
@@ -298,41 +303,46 @@ function OAuthProviderPanel({ providers, onRefresh }: {
       {error ? <p className="notice" role="alert">{error}</p> : null}
       <div className="saved-key-list">
         {providers.map((provider) => (
-          <article key={provider.provider}>
-            <div>
+          <article key={provider.provider} className="oauth-provider-card">
+            <div className="oauth-provider-summary">
               <strong>{oauthProviderLabel(provider.provider)}</strong>
               <span>{provider.connected ? "Connected" : "Not connected"}{provider.accountLabel ? ` · ${provider.accountLabel}` : ""}</span>
               {provider.status ? <small>{provider.status}</small> : null}
             </div>
             {jobs[provider.provider] ? <OAuthLoginJobPanel job={jobs[provider.provider]} /> : null}
             {provider.connected ? (
-              <div className="settings-form">
-                <button type="button" onClick={() => void disconnect(provider.provider)} disabled={busyProvider === provider.provider}>
-                  Disconnect {oauthProviderLabel(provider.provider)}
-                </button>
+              <div className="oauth-connected-panel">
+                <div className="oauth-provider-actions">
+                  <button type="button" onClick={() => void disconnect(provider.provider)} disabled={busyProvider === provider.provider}>
+                    Disconnect {oauthProviderLabel(provider.provider)}
+                  </button>
+                </div>
                 {(provider.accounts ?? []).map((account) => {
                   const label = account.accountLabel || account.id;
                   const busyKey = `${provider.provider}:${account.id}`;
                   return (
-                    <div key={account.id} className="saved-key-list">
-                      <article>
-                        <div>
-                          <strong>{label}</strong>
-                          <span>{account.executable ? "Executable" : "Refresh required"}</span>
-                          {account.status ? <small>{account.status}</small> : null}
-                        </div>
+                    <div key={account.id} className="oauth-account-card">
+                      <div>
+                        <strong>{label}</strong>
+                        <span>{account.executable ? "Executable" : "Refresh required"}</span>
+                        {account.status ? <small>{account.status}</small> : null}
+                      </div>
+                      <div className="oauth-provider-actions">
                         <button type="button" onClick={() => void disconnectAccount(provider.provider, account.id, busyKey)} disabled={busyProvider === busyKey}>
                           Disconnect {label}
                         </button>
-                      </article>
+                      </div>
                     </div>
                   );
                 })}
               </div>
-            ) : null}
-            <button type="button" onClick={() => void startLogin(provider.provider)} disabled={busyProvider === provider.provider}>
-              {busyProvider === provider.provider ? "Waiting for device login..." : `Connect ${oauthProviderLabel(provider.provider)}`}
-            </button>
+            ) : (
+              <div className="oauth-provider-actions">
+                <button type="button" onClick={() => void startLogin(provider.provider)} disabled={busyProvider === provider.provider}>
+                  {busyProvider === provider.provider ? "Waiting for device login..." : `Connect ${oauthProviderLabel(provider.provider)}`}
+                </button>
+              </div>
+            )}
           </article>
         ))}
       </div>

@@ -460,7 +460,8 @@ describe("GitResume SPA", () => {
 
     await screen.findByRole("button", { name: /disconnect GitHub Copilot/i });
     await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => url === "/api/models")).toHaveLength(2));
-    expect(screen.getAllByText(/ABCD-1234/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/ABCD-1234/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /^connect GitHub Copilot$/i })).toBeNull();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/oauth-providers/github_copilot/login",
       expect.objectContaining({ method: "POST" }),
